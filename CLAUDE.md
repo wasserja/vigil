@@ -228,6 +228,16 @@ into a transcript, a commit, or this file.
   because fixing ESV poetry put a cap in a poem block for the first time on
   that path. The renderer adds `has-cap` to the paragraph carrying the cap.
 
+- **Text inputs must never be smaller than 16px.** Safari on iOS auto-zooms
+  the page when a field below that takes focus, and it does not zoom back on
+  blur — the reader is left magnified with text running off the right and the
+  fixed chrome out of reach. It looked ESV-specific when first reported
+  (2026-08-26) only because the API-key field was the sole text input in that
+  flow; the search field had the same defect. Nothing but the computed
+  font-size prevents it: a transform or a scaled wrapper will not, and
+  `maximum-scale=1` on the viewport "fixes" it by disabling pinch-zoom for
+  everyone, which is worse. This is also a reminder that a bug reported as
+  "happens on X" may just be "X is where you touch the broken control".
 - **The service worker is inert over plain `http://` on a LAN address.**
   Registration is guarded on `window.isSecureContext`, so testing at
   `http://192.168.50.3:8000` exercises the reader but NOT the PWA. Only

@@ -398,8 +398,16 @@ input[type=range]::-moz-range-thumb{
 input[type=text],input[type=password],input[type=search]{
   appearance:none;-webkit-appearance:none;width:100%;
   background:var(--surface);border:1px solid var(--line);border-radius:9px;
-  color:var(--ink);font:inherit;font-size:13px;
-  padding:11px 12px;
+  color:var(--ink);font:inherit;
+  /* 16px is not a taste decision. Safari on iOS auto-zooms the page when a
+     text field smaller than this takes focus, and it does NOT zoom back on
+     blur: the reader is left magnified with the text running off the right
+     and the fixed chrome pushed out of reach. Nothing but the computed
+     font-size prevents it — a transform or a scaled wrapper will not. The
+     alternative, maximum-scale=1 on the viewport, buys the same fix by
+     disabling pinch-zoom for everyone, which is worse. */
+  font-size:16px;
+  padding:10px 12px;
 }
 /* WebKit gives search fields their own furniture; drop it or the field
    arrives as a white box with a native cancel dot. */
