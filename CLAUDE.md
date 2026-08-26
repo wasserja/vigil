@@ -164,6 +164,29 @@ Two more things the live API taught us, neither guessable from the docs:
    ANDed, results cap at 300. A hit opens the chapter and lands on the verse.
 4. **ESV** — the parser is tested and fixed; ESV search is what remains.
    See the ESV section below.
+5. **Larger screens: worth it, or not?** Open question, deliberately phrased
+   as a question. The brief is an iPhone in the dark, and a reader that is
+   excellent on one device beats one that is adequate everywhere — so the
+   honest first task is deciding whether to do anything at all, not how.
+
+   What already adapts: `--pad` is `7vw`, `#page` is capped by `--measure`
+   (26/34/44rem via the Column setting) and centred, the book picker goes to
+   three columns at 560px, and the chapter grid to eight at 480px.
+
+   What does not: type size is fixed in px and never scales with the
+   viewport; `--measure` maxes out at 44rem, so on a laptop the column stays
+   put in a wide field of black; the drop cap, verse numbers and headings are
+   all tuned in `em` against a phone-sized body; and the top/bottom padding is
+   `20vh`/`46vh`, which on a short landscape window is most of the screen.
+
+   Things to weigh before touching it: an iPad in portrait is genuinely close
+   to a large phone and probably needs nothing. Landscape is where it breaks
+   down, and that may argue for a height-based query rather than a width-based
+   one. Two-column reading is the obvious "desktop" move and is probably wrong
+   here — it fights the scroll-driven immersion logic and the edge masks. If
+   the answer turns out to be "raise the `--measure` ceiling and leave
+   everything else alone", that is a fine answer and should be recorded as
+   such rather than expanded into a project.
 
 ## ESV: the API v3 terms, and what they mean here
 
