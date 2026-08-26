@@ -135,11 +135,14 @@ without the baseline pass, ordinary prose gets misread as poetry.
 2. ~~PWA files.~~ **Done 2026-08-26.** Manifest, four icons, and a service
    worker that precaches the shell. All paths are relative so one build serves
    both `/` locally and `/vigil/` on Pages.
-3. **Full-text search** — the one feature the user named and never got.
-   HelloAO has no search endpoint. Options: build an index from downloaded
-   books (offline, works with the existing storage layer), or use ESV's
-   `/v3/passage/search/` for ESV readers only. The former is more in keeping
-   with the app, and now that IndexedDB is real it is genuinely available.
+3. ~~Full-text search.~~ **Done 2026-08-26.** Over the books saved for
+   offline reading — no index, a linear scan of a flattened corpus built on
+   first search and cached per translation. Measured at 10-15ms per query
+   over a whole-Bible-scale corpus (31,102 verses, 2.3MB) on desktop JSC, so
+   an inverted index would have bought nothing but a second persisted
+   structure to keep in sync. Quoted queries are phrases, bare words are
+   ANDed, results cap at 300. A hit opens the chapter and lands on the verse.
+4. **ESV, now that there is a key to test with** — see the note below.
 
 ## Gotchas already hit
 

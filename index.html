@@ -391,13 +391,39 @@ input[type=range]::-webkit-slider-thumb{
 input[type=range]::-moz-range-thumb{
   width:15px;height:15px;border:0;border-radius:50%;background:var(--gilt);
 }
-input[type=text],input[type=password]{
-  appearance:none;width:100%;
+input[type=text],input[type=password],input[type=search]{
+  appearance:none;-webkit-appearance:none;width:100%;
   background:var(--surface);border:1px solid var(--line);border-radius:9px;
   color:var(--ink);font:inherit;font-size:13px;
   padding:11px 12px;
 }
+/* WebKit gives search fields their own furniture; drop it or the field
+   arrives as a white box with a native cancel dot. */
+input[type=search]::-webkit-search-decoration,
+input[type=search]::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
 input:focus{outline:none;border-color:var(--gilt-dim)}
+
+/* ── Search ─────────────────────────────────────────────────── */
+.hit{color:var(--gilt)}
+.pg{transition:background 900ms ease,box-shadow 900ms ease}
+.pg.landed{background:var(--wash-soft);border-radius:5px;
+  box-shadow:0 0 0 6px var(--wash-soft)}
+.results{display:flex;flex-direction:column}
+.results button{
+  appearance:none;background:none;border:0;cursor:pointer;
+  text-align:left;padding:11px 2px;border-bottom:1px solid var(--line-soft);
+  font-family:var(--face);color:var(--ink-dim);font-size:14.5px;line-height:1.5;
+}
+.results button:last-child{border-bottom:0}
+.results button:active{background:var(--surface)}
+.results .rref{
+  display:block;font-family:var(--ui);font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--gilt-dim);margin-bottom:3px;
+}
+.scount{
+  font-family:var(--ui);font-size:11px;letter-spacing:.06em;
+  color:var(--ink-faint);padding:2px 0 8px;
+}
 
 .switch{
   appearance:none;width:44px;height:26px;flex:none;
@@ -468,6 +494,7 @@ input:focus{outline:none;border-color:var(--gilt-dim)}
   <header id="topbar" class="chrome">
     <button class="btn title" id="btn-passage">Genesis 1 <small>▾</small></button>
     <span class="grow"></span>
+    <button class="btn" id="btn-search" aria-label="Search" style="font-size:16px">&#8981;</button>
     <button class="btn tag" id="btn-trans">BSB</button>
     <button class="btn" id="btn-settings" aria-label="Reading settings" style="font-size:15px;letter-spacing:-.04em">aA</button>
   </header>
@@ -958,10 +985,14 @@ function renderChapter(ch){
     for (const run of blk.runs){
       if (run.v != null){
         if (first && !capUsed && S.layout !== "verse"){
-          p.appendChild(el("span","cap", String(S.chapter)));
-          capUsed = true;                       // verse 1's number is implied by the numeral
+          const cap = el("span","cap", String(S.chapter));
+          cap.dataset.v = String(run.v);        // the numeral stands in for verse 1's number
+          p.appendChild(cap);
+          capUsed = true;
         } else {
-          p.appendChild(el("span","vn", String(run.v)));
+          const vn = el("span","vn", String(run.v));
+          vn.dataset.v = String(run.v);
+          p.appendChild(vn);
         }
         afterMark = true;
       }
@@ -1048,7 +1079,7 @@ async function getChapter(book, chapter){
 }
 
 let loadToken = 0;
-async function open(book, chapter, { animate = true } = {}){
+async function open(book, chapter, { animate = true, verse = null } = {}){
   if (!byId[book]) { book = "JHN"; chapter = 1; }   // never let a bad id reach state
   const mine = ++loadToken;
   S.book = book; S.chapter = chapter;
@@ -1086,9 +1117,25 @@ async function open(book, chapter, { animate = true } = {}){
   if (data.chapters && byId[book]) byId[book].chapters = data.chapters;
   renderChapter(data);
   page.classList.remove("turning");
+  if (verse != null) landOn(verse);
   syncChrome();
   save();
   prefetchNeighbours(book, chapter);
+}
+
+/* Scroll a verse into view and let it glow once, so an arrival from search
+   does not dump you at the top of a chapter to hunt for the line. */
+function landOn(verse){
+  const mark = $(`#page [data-v="${verse}"]`);
+  if (!mark) return;
+  const reader = $("#reader");
+  /* a third of the way down reads better than dead-centre: the verse keeps
+     the lines that lead into it. */
+  const top = mark.offsetTop - reader.clientHeight / 3;
+  reader.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+  const line = mark.closest(".pg") || mark;
+  line.classList.add("landed");
+  setTimeout(() => line.classList.remove("landed"), 1600);
 }
 
 function prefetchNeighbours(book, chapter){
@@ -1107,6 +1154,111 @@ function prefetchNeighbours(book, chapter){
 function go(dir){
   const n = step(S.book, S.chapter, dir);
   if (n) open(n.book, n.chapter);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   7b · Search — over the books you have saved for offline reading
+
+   HelloAO has no search endpoint, so the corpus is what is already on
+   the device. That is the honest constraint, not a limitation to
+   apologise for: it works with no signal, which is when this app is
+   used, and it never sends a query anywhere.
+
+   ESV is deliberately absent. Its text may not be stored, so there are
+   no ESV books to search — the sheet says so rather than silently
+   returning nothing.
+
+   No inverted index. A linear scan over the flattened corpus costs one
+   toLowerCase per verse, which is a few tens of milliseconds even for a
+   whole Bible, and it avoids a second persisted structure that would
+   have to be rebuilt whenever a book is added or removed.
+   ══════════════════════════════════════════════════════════════ */
+const canonOrder = Object.fromEntries(BOOKS.map((b, i) => [b.id, i]));
+let corpusCache = new Map();            // tid -> [{b,c,v,t}], built on demand
+
+function flattenChapter(ch, bookId, chapterNo, out){
+  let v = null, buf = "";
+  const flush = () => {
+    if (v == null) return;
+    const t = buf.replace(/\s+/g, " ").trim();
+    if (t) out.push({ b: bookId, c: chapterNo, v, t });
+  };
+  for (const blk of ch.blocks || []){
+    if (!blk.runs) continue;            // headings and Hebrew subtitles are not verses
+    for (const run of blk.runs){
+      if (run.v != null){ flush(); v = run.v; buf = ""; }
+      if (run.t) buf += " " + run.t;
+    }
+  }
+  flush();
+}
+
+async function buildCorpus(tid, onProgress){
+  if (corpusCache.has(tid)) return corpusCache.get(tid);
+  const ids = [...offlineBooks]
+    .filter(k => k.startsWith(tid + "/"))
+    .map(k => k.slice(tid.length + 1))
+    .sort((a, b) => canonOrder[a] - canonOrder[b]);
+  const out = [];
+  let done = 0;
+  for (const bookId of ids){
+    const data = await Store.get(`bk:${tid}:${bookId}`);
+    if (data){
+      for (const c of Object.keys(data).map(Number).sort((a, b) => a - b))
+        flattenChapter(data[c], bookId, c, out);
+    }
+    if (onProgress) onProgress(++done, ids.length);
+  }
+  corpusCache.set(tid, out);
+  return out;
+}
+
+/* A quoted query is a phrase; anything else is an AND over its words. */
+function parseQuery(q){
+  const phrase = /^\s*"(.+)"\s*$/.exec(q);
+  if (phrase) return { phrase: phrase[1].toLowerCase().trim() };
+  const terms = q.toLowerCase().split(/[^\p{L}\p{N}'\u2019]+/u).filter(Boolean);
+  return { terms };
+}
+
+const SEARCH_CAP = 300;
+function runSearch(corpus, q){
+  const parsed = parseQuery(q);
+  const hits = [];
+  let total = 0;
+  for (const r of corpus){
+    const n = r.t.toLowerCase();
+    const ok = parsed.phrase ? n.includes(parsed.phrase)
+                             : parsed.terms.every(w => n.includes(w));
+    if (!ok) continue;
+    total++;
+    if (hits.length < SEARCH_CAP) hits.push(r);
+  }
+  return { hits, total, parsed };
+}
+
+/* Build the verse text as nodes, with matches wrapped — never innerHTML,
+   because scripture is not ours to inject markup into. */
+function highlight(text, parsed){
+  const frag = document.createDocumentFragment();
+  const needles = (parsed.phrase ? [parsed.phrase] : parsed.terms)
+    .filter(Boolean).sort((a, b) => b.length - a.length);
+  if (!needles.length){ frag.appendChild(document.createTextNode(text)); return frag; }
+  const low = text.toLowerCase();
+  let i = 0;
+  while (i < text.length){
+    let at = -1, len = 0;
+    for (const w of needles){
+      const j = low.indexOf(w, i);
+      if (j !== -1 && (at === -1 || j < at)){ at = j; len = w.length; }
+    }
+    if (at === -1){ frag.appendChild(document.createTextNode(text.slice(i))); break; }
+    if (at > i) frag.appendChild(document.createTextNode(text.slice(i, at)));
+    const m = el("span","hit"); m.textContent = text.slice(at, at + len);
+    frag.appendChild(m);
+    i = at + len;
+  }
+  return frag;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1186,6 +1338,9 @@ function drawSheet(){
   } else if (sheetView === "translations"){
     $("#sheet-title").textContent = "Translation";
     drawTranslations(body);
+  } else if (sheetView === "search"){
+    $("#sheet-title").textContent = "Search";
+    drawSearch(body);
   }
 }
 
@@ -1328,6 +1483,81 @@ function drawSettings(body){
   }
 }
 
+let searchQ = "";                 // survives a redraw, so the field keeps its text
+let searchSeq = 0;                // guards against a slow corpus build landing late
+
+function drawSearch(body){
+  const wrap = el("div");
+  const input = document.createElement("input");
+  input.type = "search"; input.placeholder = "Search the books you have saved";
+  input.value = searchQ; input.autocapitalize = "none"; input.autocorrect = "off";
+  input.spellcheck = false;
+  wrap.appendChild(input);
+
+  const status = el("div","scount");
+  const list = el("div","results");
+  wrap.append(status, list);
+  body.appendChild(wrap);
+
+  const saved = [...offlineBooks].filter(k => k.startsWith(S.translation + "/"));
+
+  if (S.translation === "ESV"){
+    list.appendChild(Object.assign(el("div","note"), { textContent:
+      "The ESV is licensed text and cannot be stored on the device, so there is nothing " +
+      "saved here to search. Switch to a public-domain translation and download a book first." }));
+    input.disabled = true;
+    return;
+  }
+  if (!saved.length){
+    list.appendChild(Object.assign(el("div","note"), { textContent:
+      "Search looks through the books you have saved for offline reading, so it works with " +
+      "no signal and never sends your query anywhere. Download a book from the passage " +
+      "list and it will appear here." }));
+    return;
+  }
+
+  const render = async () => {
+    const mine = ++searchSeq;
+    const q = searchQ.trim();
+    list.innerHTML = "";
+    if (q.length < 2){
+      status.textContent = `${saved.length} book${saved.length === 1 ? "" : "s"} saved · type to search`;
+      return;
+    }
+    status.textContent = "Searching\u2026";
+    const corpus = await buildCorpus(S.translation,
+      (d, t) => { if (mine === searchSeq && t > 1) status.textContent = `Reading ${d}/${t}\u2026`; });
+    if (mine !== searchSeq) return;          // a newer keystroke already won
+
+    const { hits, total, parsed } = runSearch(corpus, q);
+    if (!total){ status.textContent = "No verses found."; return; }
+
+    const books = new Set(hits.map(h => h.b));
+    status.textContent = `${total} verse${total === 1 ? "" : "s"} in ` +
+      (books.size === 1 ? byId[[...books][0]].name : `${books.size} books`) +
+      (total > hits.length ? ` \u00b7 showing the first ${hits.length}` : "");
+
+    const frag = document.createDocumentFragment();
+    for (const h of hits){
+      const b = el("button");
+      b.appendChild(el("span","rref", `${byId[h.b].name} ${h.c}:${h.v}`));
+      b.appendChild(highlight(h.t, parsed));
+      /* Capture before closing: closeSheet() tears down sheet state, and
+         arguments evaluate after it runs. */
+      const bk = h.b, ch = h.c, vs = h.v;
+      b.onclick = () => { closeSheet(); open(bk, ch, { verse: vs }); };
+      frag.appendChild(b);
+    }
+    list.appendChild(frag);
+  };
+
+  let t;
+  input.oninput = () => { searchQ = input.value; clearTimeout(t); t = setTimeout(render, 160); };
+  input.onkeydown = (e) => { if (e.key === "Enter"){ e.preventDefault(); clearTimeout(t); render(); } };
+  render();
+  if (!searchQ) setTimeout(() => input.focus(), 60);
+}
+
 async function drawTranslations(body){
   const back = $("#sheet-back");
   back.hidden = false;
@@ -1422,6 +1652,7 @@ async function downloadBook(btn){
   const ok = await Store.set(`bk:${tid}:${bookId}`, out);
   if (!ok){ btn.textContent = "Download"; toast("That book was too large to store"); return; }
   offlineBooks.add(`${tid}/${bookId}`);
+  corpusCache.delete(tid);                  // the shelf changed; rebuild on next search
   const idx = (await Store.get("offline")) || [];
   if (!idx.includes(`${tid}/${bookId}`)) { idx.push(`${tid}/${bookId}`); await Store.set("offline", idx); }
   toast(`${bk.name} saved for offline`);
@@ -1432,6 +1663,7 @@ async function removeBook(btn){
   btn.disabled = true;
   await Store.del(`bk:${S.translation}:${S.book}`);
   offlineBooks.delete(`${S.translation}/${S.book}`);
+  corpusCache.delete(S.translation);
   const idx = ((await Store.get("offline")) || []).filter(k => k !== `${S.translation}/${S.book}`);
   await Store.set("offline", idx);
   btn.disabled = false;
@@ -1539,6 +1771,7 @@ document.addEventListener("keydown", (e) => {
 $("#btn-passage").onclick = () => openSheet("passage");
 $("#btn-trans").onclick   = () => openSheet("translations");
 $("#btn-settings").onclick= () => openSheet("settings");
+$("#btn-search").onclick  = () => openSheet("search");
 $("#btn-prev").onclick    = () => go(-1);
 $("#btn-next").onclick    = () => go(1);
 $("#sheet-close").onclick = closeSheet;
