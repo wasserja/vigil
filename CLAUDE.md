@@ -288,13 +288,14 @@ Next candidates, in the order worth trying:
   black, rendered from HTML via headless Chrome. The maskable variant keeps
   its ink inside the inner-80% safe circle so Android's mask can't clip it.
 - **iOS pins the status bar style at launch.** `apple-mobile-web-app-status-
-  bar-style` is `black-translucent`, which draws the clock in white and lets
-  the page run under it — right for dark, wrong for light, and it cannot be
-  re-pointed at runtime once a home-screen app has launched. So in light mode
-  on an installed iOS app the clock may be hard to read. `theme-color` IS
-  updated live and fixes Safari-in-a-tab and Android; only the installed iOS
-  case is stuck. Fixing it properly means giving up the edge-to-edge bleed in
-  dark mode, which is a worse trade. Open, deliberately.
+  bar-style` is `black-translucent`, and it cannot be re-pointed at runtime
+  once a home-screen app has launched, so it cannot follow the theme.
+  `theme-color` IS updated live, which covers Safari-in-a-tab and Android.
+  **Checked on device 2026-08-26: light mode reads fine, so leave this
+  alone.** It was raised as a likely problem — white clock on vellum — and
+  the prediction was simply wrong. Anyone tempted to "fix" it by switching to
+  `default` would give up the edge-to-edge bleed in dark mode to solve a
+  problem that does not exist.
 - Gilt is not the same value in both themes. On black it is
   `hsl(41 …% …%)` derived from L; on vellum it is a fixed, much darker
   `hsl(38 66% 28%)`, because the L-derived gold falls to 3.9:1 on a light
