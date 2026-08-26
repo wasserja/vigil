@@ -162,7 +162,8 @@ Two more things the live API taught us, neither guessable from the docs:
    an inverted index would have bought nothing but a second persisted
    structure to keep in sync. Quoted queries are phrases, bare words are
    ANDed, results cap at 300. A hit opens the chapter and lands on the verse.
-4. **ESV, now that there is a key to test with** — see the note below.
+4. **ESV** — the parser is tested and fixed; ESV search is what remains.
+   See the ESV section below.
 
 ## ESV: the API v3 terms, and what they mean here
 
@@ -198,20 +199,29 @@ permissible. It is still not built, for three reasons:
 Storing nothing costs almost nothing and removes the whole class of risk.
 **Keep it — but as a considered choice, not a misreading of the terms.**
 
-### What the key is actually worth doing
+### What the key was worth doing
 
-1. **Test `fetchESV` / `parseESV` for the first time.** They have never run
-   against the live API. `parseESV`'s indent-baseline pass is the subtle part
-   and is entirely unexercised.
-2. **Verify the copyright wording** against Crossway's citation page.
-3. **ESV search via `/v3/passage/search/`.** The one place ESV could reach
-   parity: search needs no storage, costs one query, and ESV readers get
-   nothing from the offline corpus today. Best candidate for real work.
-4. **Confirm the key is approved** — the form warns some uses need staff
-   approval, so a key may exist but not yet be live.
+1. ~~Test `fetchESV` / `parseESV` against the live API.~~ **Done 2026-08-26**,
+   and it found three real parser bugs — see the `parseESV` notes above. Live
+   fixtures were kept out of the repo; no ESV text is committed.
+2. ~~Confirm the key is approved.~~ **Done** — John 1, Psalm 23, Psalm 119 and
+   Philemon all returned HTTP 200.
+3. **Verify the copyright wording** against Crossway's citation page. Still
+   open. We carry their standard notice and a link to esv.org, but it has not
+   been checked against the page their application form links to.
+4. **ESV search via `/v3/passage/search/`.** Still open, and the strongest
+   remaining candidate: it is the one place ESV can reach parity, needs no
+   storage so it sidesteps the guideline-5 question entirely, and costs one
+   query against a 5,000/day budget. Open design question before building it —
+   whether ESV results share the search sheet with the offline corpus or read
+   as a distinct mode. They behave differently enough (network vs local,
+   Crossway's ranking vs our substring match) that saying so in the UI is
+   probably better than pretending they are one feature.
 
 The key is entered at runtime and stored on-device. It must never be pasted
-into a transcript, a commit, or this file.
+into a transcript, a commit, or this file. For local testing there is a copy
+at `~/.esv_api_key` (mode 600, outside the repo and outside the homelab
+backup allowlist); read it into a request, never echo it.
 
 ## Open: the bottom gap (unresolved, 2026-08-26)
 
