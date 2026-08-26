@@ -331,13 +331,22 @@ body.sheet-open #sheet{transform:translateY(0)}
 }
 .seg button[aria-selected="true"]{background:var(--wash);color:var(--gilt)}
 
-.books{display:grid;grid-template-columns:1fr 1fr;gap:1px 10px}
-@media (min-width:560px){.books{grid-template-columns:repeat(3,1fr)}}
+/* Multi-column rather than grid. A column layout fills top-to-bottom and
+   then moves right, which is the order a list of books is read in; grid's
+   row-major flow put Exodus beside Genesis instead of beneath it. Multicol
+   also needs nothing but a column count — a grid would need an explicit
+   ceil(n / columns) row count, recomputed for each testament (39 vs 27)
+   and again at every breakpoint. */
+.books{column-count:2;column-gap:10px}
+@media (min-width:560px){.books{column-count:3}}
+.order-row{display:flex;justify-content:flex-end;margin:-4px 0 12px}
 .books button{
   appearance:none;background:none;border:0;text-align:left;
   color:var(--ink);font:inherit;font-size:15px;
   padding:11px 8px;border-radius:8px;cursor:pointer;
   display:flex;align-items:baseline;gap:.5em;
+  width:100%;margin-bottom:1px;
+  break-inside:avoid;-webkit-column-break-inside:avoid;
 }
 .books button b{font-weight:400;flex:1}
 .books button span{font-size:10px;color:var(--ink-faint);letter-spacing:.08em}
@@ -881,6 +890,7 @@ const S = {
   book: "JHN",
   chapter: 1,
   theme: "dark",
+  bookOrder: "canon",
   lum: 68, warm: 9,
   fs: 19, lh: 1.68, measure: 34,
   face: "book", verses: "on", layout: "para", woc: "off",
@@ -1398,8 +1408,25 @@ function drawBooks(body){
   }
   body.appendChild(seg);
 
+  const orderRow = el("div","order-row");
+  const ord = el("div","steps");
+  for (const [k, label] of [["canon","Canon"],["alpha","A\u2013Z"]]){
+    const b = el("button", null, label);
+    b.setAttribute("aria-selected", String(S.bookOrder === k));
+    b.onclick = () => { S.bookOrder = k; save(); drawSheet(); };
+    ord.appendChild(b);
+  }
+  orderRow.appendChild(ord);
+  body.appendChild(orderRow);
+
+  /* filter() already copies, so sorting here never disturbs BOOKS itself —
+     canon order is derived from that array and must stay intact. */
+  const shown = BOOKS.filter(b => (testament === "ot") === b.ot);
+  if (S.bookOrder === "alpha")
+    shown.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric:true }));
+
   const grid = el("div","books");
-  for (const bk of BOOKS.filter(b => (testament === "ot") === b.ot)){
+  for (const bk of shown){
     const b = el("button");
     b.append(el("b", null, bk.name), el("span", null, String(bk.chapters)));
     if (bk.id === S.book) b.setAttribute("aria-current","true");
@@ -1751,7 +1778,7 @@ function save(){
   saveTimer = setTimeout(() => {
     Store.set("settings", {
       translation:S.translation, translationName:S.translationName, esvKey:S.esvKey,
-      theme:S.theme, lum:S.lum, warm:S.warm, fs:S.fs, lh:S.lh, measure:S.measure,
+      theme:S.theme, bookOrder:S.bookOrder, lum:S.lum, warm:S.warm, fs:S.fs, lh:S.lh, measure:S.measure,
       face:S.face, verses:S.verses, layout:S.layout, woc:S.woc,
       awake:S.awake, autohide:S.autohide
     });
