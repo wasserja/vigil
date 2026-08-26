@@ -21,9 +21,21 @@ than hitting a hard cut. **The reading surface is the product; UI is a guest.**
 
 ## Architecture
 
-One self-contained `index.html`. No build step, no framework, no dependencies,
-no external assets. The body typeface is a system stack (Iowan Old Style /
-Charter / Palatino) so nothing is downloaded and it renders instantly.
+`index.html` holds the entire app — all markup, style and logic. No build
+step, no framework, no dependencies, nothing fetched from a CDN. The body
+typeface is a system stack (Iowan Old Style / Charter / Palatino) so nothing
+is downloaded and it renders instantly.
+
+Alongside it sit the PWA sidecars, which are the only other files served:
+`manifest.webmanifest`, `sw.js`, and four PNG icons. They exist because a
+home-screen app cannot be a single file — the browser demands a manifest and
+a worker at their own URLs. Everything still hand-edits; there is nothing to
+compile.
+
+Storage is real and on-device: `localStorage` (namespaced `vigil:`) for
+settings, last position and the offline index, IndexedDB for downloaded
+books. The origin is shared with every other GitHub Pages project on the
+account, hence the namespace.
 
 Roughly in order, the file contains: `Store` (persistence), `BOOKS` (the canon
 with chapter counts), the two source adapters, `Builder` (the normaliser),
@@ -92,19 +104,20 @@ without the baseline pass, ordinary prose gets misread as poetry.
 
 ## Priorities
 
-1. **Replace the `Store` adapter.** It currently prefers `window.storage`, which
-   only exists inside Claude's artifact sandbox. Self-hosted, it falls through
-   to in-memory and every setting and downloaded book is lost on refresh. Use
-   `localStorage` for settings and last position, IndexedDB for downloaded
-   books (they are far too large for `localStorage`). There is a marked comment
-   at the swap point.
-2. **PWA files**: `manifest.webmanifest`, an icon, and a service worker that
-   precaches the shell so it opens with no signal. Mind the subpath scope.
-3. **Full-text search** — the one feature the user named and never got. HelloAO
-   has no search endpoint. Options: build an index from downloaded books
-   (offline, works with the existing storage layer), or use ESV's
+1. ~~Replace the `Store` adapter.~~ **Done 2026-08-26.** `localStorage` for
+   settings/position/offline index, IndexedDB for downloaded books, routed by
+   the `bk:` key prefix. A quota failure aborts the IDB transaction, which
+   surfaces as `set()` returning `false` so the "too large to store" toast
+   still fires. `Store.backed` probes localStorage with a real write, because
+   Safari private mode exposes the object but throws on `setItem`.
+2. ~~PWA files.~~ **Done 2026-08-26.** Manifest, four icons, and a service
+   worker that precaches the shell. All paths are relative so one build serves
+   both `/` locally and `/vigil/` on Pages.
+3. **Full-text search** — the one feature the user named and never got.
+   HelloAO has no search endpoint. Options: build an index from downloaded
+   books (offline, works with the existing storage layer), or use ESV's
    `/v3/passage/search/` for ESV readers only. The former is more in keeping
-   with the app.
+   with the app, and now that IndexedDB is real it is genuinely available.
 
 ## Gotchas already hit
 
@@ -114,3 +127,20 @@ without the baseline pass, ordinary prose gets misread as poetry.
   Capture ids into a local before closing any sheet.
 - Verse numbers and the drop cap already supply their own spacing. The renderer
   tracks an `afterMark` flag so text runs don't add a second space.
+
+- **The service worker is inert over plain `http://` on a LAN address.**
+  Registration is guarded on `window.isSecureContext`, so testing at
+  `http://192.168.50.3:8000` exercises the reader but NOT the PWA. Only
+  `localhost` or the live `https://` Pages URL will install the worker. Same
+  constraint as Wake Lock, and easy to mistake for a broken worker.
+- **`sw.js` must never cache scripture.** The same-origin guard in its `fetch`
+  handler is a licensing boundary, not an optimisation — a runtime cache over
+  `api.esv.org` would put the app in breach of Crossway's terms. The header
+  comment in `sw.js` says so; leave both in place.
+- The shell is served stale-while-revalidate, so a pushed change lands on the
+  **second** launch. Bump `VERSION` in `sw.js` to make it the first and drop
+  the old cache. Forgetting this is the usual "I deployed but my phone shows
+  the old version".
+- Icons are generated, not hand-drawn: a gilt `V` in the body serif on pure
+  black, rendered from HTML via headless Chrome. The maskable variant keeps
+  its ink inside the inner-80% safe circle so Android's mask can't clip it.

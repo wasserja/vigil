@@ -9,6 +9,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Vigil">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <title>Vigil</title>
 <style>
 /* ─────────────────────────────────────────────────────────────
@@ -1476,6 +1479,21 @@ $("#sheet-back").onclick  = () => {
   await open(S.book, S.chapter, { animate:false });
   showChrome();
 })();
+
+/* ══════════════════════════════════════════════════════════════
+   14 · Service worker — offline shell
+   Registered last, and deliberately never awaited: a worker that
+   fails to install must not keep the reader from opening.
+   Needs a secure context, so this is inert over plain http:// on a
+   LAN address (same constraint as Wake Lock) — https or localhost.
+   ══════════════════════════════════════════════════════════════ */
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  addEventListener("load", () => {
+    /* Relative path, so scope follows the directory the app is served
+       from: / locally, /vigil/ on Pages. */
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
