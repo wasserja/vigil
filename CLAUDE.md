@@ -144,6 +144,55 @@ without the baseline pass, ordinary prose gets misread as poetry.
    ANDed, results cap at 300. A hit opens the chapter and lands on the verse.
 4. **ESV, now that there is a key to test with** — see the note below.
 
+## ESV: the API v3 terms, and what they mean here
+
+Recorded 2026-08-26 from the Crossway application form, when a key finally
+existed to test with. The seven guidelines, and where each lands:
+
+| Guideline | Where Vigil stands |
+|---|---|
+| Copyright citation as outlined by Crossway | Colophon carries their notice verbatim + link to esv.org. **Unverified** against their citation page — check the exact wording. |
+| Strictly noncommercial | Fine. Free, no ads, no sale. |
+| ≤500 verses per query, or half a book, whichever is less (single-chapter books excepted) | Fine. One chapter per query; the longest is Psalm 119 at 176 verses. Two-chapter books hit exactly half, which is allowed; single-chapter books are exempt by the rule's own wording. |
+| 5,000 queries/day, ≤1,000/hour, ≤60/minute | Fine with headroom. Steady reading costs ~1 request per chapter turn once `prefetchNeighbours` is warm. 5,000/day is the whole Bible four times over. Only sustained fast flicking (>20 turns/min) could approach 60/min. |
+| **May not locally store more than 500 consecutive verses or one-half of any book, whichever is less** | We store **nothing**. See below. |
+| Redistribution ≤500 verses, <50% of a book, <50% of the containing work | Not applicable; Vigil redistributes nothing. |
+| May not display >500 consecutive verses or half a book on any page | Fine. One chapter per page. |
+
+**The storage rule is looser than this repo assumes, and that is deliberate.**
+The Licensing section above says ESV "must not be cached to disk". Crossway
+does not actually say that — they permit storing up to 500 consecutive verses
+or half a book, whichever is less. So a limited ESV offline mode would be
+permissible. It is still not built, for three reasons:
+
+1. "500 **consecutive** verses" is ambiguous — a cap on contiguous runs, or a
+   total? The conservative reading is the only safe one, and it is the one
+   that makes the feature least useful.
+2. Complying properly means per-book accounting and an eviction policy that
+   exists nowhere else in the app, sitting alongside the unrestricted
+   public-domain path. Two storage policies, one of them legally load-bearing.
+3. The payoff is small. 500 verses is roughly ten chapters — enough to re-read
+   last night, not enough to be an offline Bible, and far too little to be a
+   useful search corpus.
+
+Storing nothing costs almost nothing and removes the whole class of risk.
+**Keep it — but as a considered choice, not a misreading of the terms.**
+
+### What the key is actually worth doing
+
+1. **Test `fetchESV` / `parseESV` for the first time.** They have never run
+   against the live API. `parseESV`'s indent-baseline pass is the subtle part
+   and is entirely unexercised.
+2. **Verify the copyright wording** against Crossway's citation page.
+3. **ESV search via `/v3/passage/search/`.** The one place ESV could reach
+   parity: search needs no storage, costs one query, and ESV readers get
+   nothing from the offline corpus today. Best candidate for real work.
+4. **Confirm the key is approved** — the form warns some uses need staff
+   approval, so a key may exist but not yet be live.
+
+The key is entered at runtime and stored on-device. It must never be pasted
+into a transcript, a commit, or this file.
+
 ## Gotchas already hit
 
 - `closeSheet()` resets `pickedBook` to `null`. A handler written as
