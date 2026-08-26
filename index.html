@@ -1,0 +1,1481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Vigil">
+<title>Vigil</title>
+<style>
+/* ─────────────────────────────────────────────────────────────
+   VIGIL — a dark room for reading scripture
+   Palette:  void #000000 · ink (warm parchment, tunable)
+             gilt #9C7F4A · ash #2A2823 · dim (muted ink)
+   Type:     Book (Iowan/Charter) · Modern (ui-serif) · Plain (ui-sans)
+   Signature: gilt chapter numeral set as a drop cap, verse numbers
+             hung in the margin, and chrome that dissolves to nothing.
+   ───────────────────────────────────────────────────────────── */
+
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000}
+body{
+  -webkit-tap-highlight-color:transparent;
+  -webkit-text-size-adjust:100%;
+  overscroll-behavior:none;
+}
+
+:root{
+  --void:#000;
+  --ink:#b6ab98;
+  --ink-dim:#6a6358;
+  --ink-faint:#3d3931;
+  --gilt:#9c7f4a;
+  --gilt-dim:#5c4a2b;
+  --ash:#211f1b;
+
+  --face: "Iowan Old Style","Palatino Linotype",Palatino,"Sitka Text",Charter,"Bitstream Charter",Cambria,Georgia,serif;
+  --ui: ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+
+  --fs:19px;
+  --lh:1.68;
+  --measure:34rem;
+  --pad:7vw;
+
+  --fade:520ms;
+}
+@media (prefers-reduced-motion: reduce){ :root{--fade:1ms} }
+
+/* ── shell ────────────────────────────────────────────────── */
+#app{position:fixed;inset:0;background:var(--void)}
+
+#reader{
+  position:absolute;inset:0;
+  overflow-y:auto;overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior-y:contain;
+  touch-action:pan-y;
+  /* text dissolves into black at the edges instead of hitting a hard cut */
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 54px,#000 calc(100% - 54px),transparent 100%);
+          mask-image:linear-gradient(to bottom,transparent 0,#000 54px,#000 calc(100% - 54px),transparent 100%);
+}
+
+#page{
+  max-width:var(--measure);
+  margin:0 auto;
+  padding:
+    calc(env(safe-area-inset-top,0px) + 20vh)
+    var(--pad)
+    calc(env(safe-area-inset-bottom,0px) + 46vh);
+  font-family:var(--face);
+  font-size:var(--fs);
+  line-height:var(--lh);
+  color:var(--ink);
+  font-variant-numeric:oldstyle-numeral;
+  text-rendering:optimizeLegibility;
+  transition:opacity 260ms ease;
+}
+#page.turning{opacity:0}
+body[data-face="modern"] #page{font-family:ui-serif,Charter,Georgia,"Times New Roman",serif}
+body[data-face="plain"]  #page{font-family:var(--ui);letter-spacing:-.005em}
+
+/* ── the text itself ──────────────────────────────────────── */
+.ref-line{
+  font-family:var(--ui);
+  font-size:.62rem;
+  letter-spacing:.22em;
+  text-transform:uppercase;
+  color:var(--gilt-dim);
+  margin:0 0 2.4em;
+}
+.hd{
+  font-family:var(--face);
+  font-size:.86em;
+  font-weight:400;
+  font-style:normal;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--gilt);
+  opacity:.82;
+  margin:2.1em 0 .9em;
+  line-height:1.45;
+}
+.hd:first-child{margin-top:0}
+.sub{
+  font-style:italic;
+  color:var(--ink-dim);
+  margin:0 0 1.2em;
+  font-size:.92em;
+}
+.pg{margin:0 0 1.05em}
+.pg + .pg{margin-top:0}
+.poem{
+  margin:0;
+  padding-left:calc(var(--ind,1) * 1.35em);
+  text-indent:-.9em;
+}
+.poem + .pg{margin-top:1.05em}
+.pg + .poem{margin-top:.4em}
+.poem.last{margin-bottom:1.05em}
+
+.vn{
+  font-family:var(--ui);
+  font-size:.56em;
+  font-variant-numeric:lining-nums;
+  letter-spacing:.02em;
+  color:var(--gilt);
+  opacity:.72;
+  vertical-align:.42em;
+  margin-right:.32em;
+  margin-left:.06em;
+  user-select:none;
+}
+.pg > .vn:first-child,.poem > .vn:first-child{margin-left:0}
+body[data-verses="off"] .vn{display:none}
+
+.woc{color:var(--ink)}
+body[data-woc="on"] .woc{color:#a8624f}
+
+/* signature: the gilt chapter numeral */
+.cap{
+  float:left;
+  font-size:3.15em;
+  line-height:.82;
+  padding-top:.06em;
+  margin:0 .14em -.04em 0;
+  color:var(--gilt);
+  font-variant-numeric:lining-nums;
+  font-weight:400;
+}
+body[data-layout="verse"] .cap{display:none}
+
+/* verse-per-line layout */
+body[data-layout="verse"] .pg,
+body[data-layout="verse"] .poem{
+  margin:0 0 .62em;
+  padding-left:0;
+  text-indent:0;
+}
+
+.close-mark{
+  margin:3.4em 0 0;
+  text-align:center;
+  color:var(--gilt);
+  opacity:.35;
+  font-size:.6em;
+  letter-spacing:.6em;
+}
+.colophon{
+  margin:2.6em 0 0;
+  font-family:var(--ui);
+  font-size:.62rem;
+  line-height:1.7;
+  letter-spacing:.06em;
+  color:var(--ink-faint);
+}
+.colophon a{color:var(--ink-faint)}
+
+/* ── chrome (dissolves) ───────────────────────────────────── */
+.chrome{
+  position:absolute;left:0;right:0;
+  display:flex;align-items:center;gap:2px;
+  font-family:var(--ui);
+  opacity:1;
+  transition:opacity var(--fade) ease, transform var(--fade) ease;
+  z-index:4;
+}
+#topbar{
+  top:0;
+  padding:calc(env(safe-area-inset-top,0px) + 8px) 10px 14px;
+  background:linear-gradient(to bottom,#000 42%,rgba(0,0,0,0));
+}
+#botbar{
+  bottom:0;
+  padding:20px 10px calc(env(safe-area-inset-bottom,0px) + 10px);
+  background:linear-gradient(to top,#000 42%,rgba(0,0,0,0));
+}
+body.immersive .chrome{opacity:0;pointer-events:none}
+body.immersive #topbar{transform:translateY(-6px)}
+body.immersive #botbar{transform:translateY(6px)}
+
+.btn{
+  appearance:none;-webkit-appearance:none;
+  background:none;border:0;
+  color:var(--ink-dim);
+  font:inherit;font-size:13px;
+  letter-spacing:.04em;
+  padding:9px 11px;
+  border-radius:9px;
+  cursor:pointer;
+  white-space:nowrap;
+  transition:color 160ms ease,background 160ms ease;
+}
+.btn:active{background:#0f0e0c;color:var(--ink)}
+.btn:focus-visible{outline:1.5px solid var(--gilt);outline-offset:1px}
+.btn.tag{
+  font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--gilt-dim);
+}
+.btn.title{
+  color:var(--ink);
+  font-size:14px;
+  letter-spacing:.02em;
+}
+.btn.title small{color:var(--gilt-dim);margin-left:.5em;font-size:9px;vertical-align:1px}
+.btn[disabled]{opacity:.22;pointer-events:none}
+.grow{flex:1}
+
+/* reading progress hairline */
+#progress{
+  position:absolute;top:0;left:0;right:0;height:1px;
+  z-index:6;pointer-events:none;
+}
+#progress i{
+  display:block;height:100%;width:0;
+  background:var(--gilt);
+  opacity:.55;
+  transition:opacity var(--fade) ease;
+}
+body.immersive #progress i{opacity:.16}
+
+/* ── sheets ───────────────────────────────────────────────── */
+#scrim{
+  position:absolute;inset:0;z-index:8;
+  background:rgba(0,0,0,.72);
+  backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+  opacity:0;pointer-events:none;
+  transition:opacity 240ms ease;
+}
+body.sheet-open #scrim{opacity:1;pointer-events:auto}
+
+#sheet{
+  position:absolute;left:0;right:0;bottom:0;z-index:9;
+  max-height:86%;
+  display:flex;flex-direction:column;
+  background:#000;
+  border-top:1px solid var(--ash);
+  border-radius:16px 16px 0 0;
+  transform:translateY(101%);
+  transition:transform 300ms cubic-bezier(.22,.9,.28,1);
+  font-family:var(--ui);
+  color:var(--ink);
+}
+body.sheet-open #sheet{transform:translateY(0)}
+@media (prefers-reduced-motion: reduce){#sheet{transition:none}}
+
+.sheet-grip{
+  flex:none;height:22px;display:grid;place-items:center;cursor:grab;
+}
+.sheet-grip::after{content:"";width:34px;height:3px;border-radius:2px;background:var(--ash)}
+.sheet-head{
+  flex:none;display:flex;align-items:center;gap:4px;
+  padding:0 8px 8px;
+}
+.sheet-head h2{
+  margin:0;flex:1;
+  font-size:11px;letter-spacing:.24em;text-transform:uppercase;
+  color:var(--gilt-dim);font-weight:500;
+  padding-left:8px;
+}
+.sheet-body{
+  flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  padding:0 14px calc(env(safe-area-inset-bottom,0px) + 22px);
+}
+
+/* passage picker */
+.seg{
+  display:flex;gap:2px;padding:3px;margin:0 0 14px;
+  background:#0b0a09;border-radius:11px;
+}
+.seg button{
+  flex:1;appearance:none;background:none;border:0;
+  color:var(--ink-dim);font:inherit;font-size:12px;
+  letter-spacing:.1em;text-transform:uppercase;
+  padding:9px 4px;border-radius:9px;cursor:pointer;
+}
+.seg button[aria-selected="true"]{background:#17150f;color:var(--gilt)}
+
+.books{display:grid;grid-template-columns:1fr 1fr;gap:1px 10px}
+@media (min-width:560px){.books{grid-template-columns:repeat(3,1fr)}}
+.books button{
+  appearance:none;background:none;border:0;text-align:left;
+  color:var(--ink);font:inherit;font-size:15px;
+  padding:11px 8px;border-radius:8px;cursor:pointer;
+  display:flex;align-items:baseline;gap:.5em;
+}
+.books button b{font-weight:400;flex:1}
+.books button span{font-size:10px;color:var(--ink-faint);letter-spacing:.08em}
+.books button[aria-current="true"]{color:var(--gilt)}
+.books button:active{background:#0d0c0a}
+
+.chapters{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}
+@media (min-width:480px){.chapters{grid-template-columns:repeat(8,1fr)}}
+.chapters button{
+  appearance:none;background:#0a0908;border:1px solid transparent;
+  color:var(--ink);font:inherit;font-size:14px;
+  aspect-ratio:1;border-radius:9px;cursor:pointer;
+  font-variant-numeric:lining-nums;
+}
+.chapters button:active{background:#151310}
+.chapters button[aria-current="true"]{border-color:var(--gilt-dim);color:var(--gilt);background:#100e0a}
+
+/* settings rows */
+.row{
+  display:flex;align-items:center;gap:12px;
+  padding:15px 8px;
+  border-bottom:1px solid #131210;
+}
+.row:last-child{border-bottom:0}
+.row .lbl{flex:1;font-size:14px;color:var(--ink)}
+.row .lbl em{
+  display:block;font-style:normal;font-size:11.5px;
+  color:var(--ink-faint);margin-top:3px;line-height:1.45;
+}
+.group-title{
+  font-size:10px;letter-spacing:.24em;text-transform:uppercase;
+  color:var(--gilt-dim);padding:22px 8px 6px;
+}
+.pillbtn{
+  appearance:none;background:#0d0c0a;border:1px solid #1c1a16;
+  color:var(--ink);font:inherit;font-size:12.5px;
+  padding:8px 13px;border-radius:20px;cursor:pointer;white-space:nowrap;
+}
+.pillbtn:active{background:#171512}
+.pillbtn.primary{border-color:var(--gilt-dim);color:var(--gilt)}
+.pillbtn[disabled]{opacity:.35;pointer-events:none}
+
+.steps{display:flex;gap:3px;background:#0b0a09;padding:3px;border-radius:10px}
+.steps button{
+  appearance:none;background:none;border:0;color:var(--ink-dim);
+  font:inherit;font-size:12px;padding:7px 11px;border-radius:8px;cursor:pointer;
+}
+.steps button[aria-selected="true"]{background:#17150f;color:var(--gilt)}
+
+input[type=range]{
+  -webkit-appearance:none;appearance:none;
+  width:132px;height:24px;background:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-runnable-track{height:1px;background:#2b2822}
+input[type=range]::-moz-range-track{height:1px;background:#2b2822}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+  background:var(--gilt);margin-top:-7px;
+}
+input[type=range]::-moz-range-thumb{
+  width:15px;height:15px;border:0;border-radius:50%;background:var(--gilt);
+}
+input[type=text],input[type=password]{
+  appearance:none;width:100%;
+  background:#0a0908;border:1px solid #1c1a16;border-radius:9px;
+  color:var(--ink);font:inherit;font-size:13px;
+  padding:11px 12px;
+}
+input:focus{outline:none;border-color:var(--gilt-dim)}
+
+.switch{
+  appearance:none;width:44px;height:26px;flex:none;
+  background:#151310;border:1px solid #221f1a;border-radius:14px;
+  position:relative;cursor:pointer;transition:background 180ms ease;
+}
+.switch::after{
+  content:"";position:absolute;top:3px;left:3px;
+  width:18px;height:18px;border-radius:50%;
+  background:var(--ink-dim);transition:transform 180ms ease,background 180ms ease;
+}
+.switch[aria-checked="true"]{background:#20190e;border-color:var(--gilt-dim)}
+.switch[aria-checked="true"]::after{transform:translateX(18px);background:var(--gilt)}
+
+.tlist button{
+  display:flex;width:100%;align-items:baseline;gap:10px;
+  appearance:none;background:none;border:0;text-align:left;
+  color:var(--ink);font:inherit;font-size:14.5px;
+  padding:13px 8px;border-radius:9px;cursor:pointer;
+  border-bottom:1px solid #131210;
+}
+.tlist button b{font-weight:400}
+.tlist button i{font-style:normal;font-size:11px;color:var(--ink-faint);flex:1;text-align:right}
+.tlist button[aria-current="true"] b{color:var(--gilt)}
+
+.note{
+  font-size:11.5px;line-height:1.6;color:var(--ink-faint);
+  padding:12px 8px 0;
+}
+.note a{color:var(--gilt-dim)}
+
+/* states */
+.state{
+  padding:8vh 0;text-align:center;
+  font-family:var(--ui);color:var(--ink-dim);
+}
+.state h3{
+  font-family:var(--face);font-weight:400;font-size:19px;
+  color:var(--ink);margin:0 0 10px;
+}
+.state p{font-size:13px;line-height:1.65;margin:0 auto 18px;max-width:30ch}
+.spin{
+  width:16px;height:16px;margin:0 auto;border-radius:50%;
+  border:1px solid var(--ash);border-top-color:var(--gilt);
+  animation:sp 800ms linear infinite;
+}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.spin{animation-duration:2.4s}}
+
+#toast{
+  position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 74px);
+  transform:translate(-50%,8px);
+  z-index:12;pointer-events:none;
+  background:#0d0c0a;border:1px solid #1e1b16;
+  color:var(--ink);font-family:var(--ui);font-size:12.5px;
+  padding:9px 15px;border-radius:20px;
+  opacity:0;transition:opacity 220ms ease,transform 220ms ease;
+  max-width:80vw;text-align:center;
+}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body class="immersive" data-face="book" data-verses="on" data-layout="para" data-woc="off">
+
+<div id="app">
+  <div id="progress"><i></i></div>
+
+  <header id="topbar" class="chrome">
+    <button class="btn title" id="btn-passage">Genesis 1 <small>▾</small></button>
+    <span class="grow"></span>
+    <button class="btn tag" id="btn-trans">BSB</button>
+    <button class="btn" id="btn-settings" aria-label="Reading settings" style="font-size:15px;letter-spacing:-.04em">aA</button>
+  </header>
+
+  <main id="reader">
+    <article id="page"></article>
+  </main>
+
+  <footer id="botbar" class="chrome">
+    <button class="btn" id="btn-prev">‹ <span></span></button>
+    <span class="grow"></span>
+    <button class="btn" id="btn-next"><span></span> ›</button>
+  </footer>
+
+  <div id="scrim"></div>
+
+  <section id="sheet" role="dialog" aria-modal="true" aria-label="Menu">
+    <div class="sheet-grip"></div>
+    <div class="sheet-head">
+      <button class="btn" id="sheet-back" hidden>‹</button>
+      <h2 id="sheet-title">Passage</h2>
+      <button class="btn" id="sheet-close">Done</button>
+    </div>
+    <div class="sheet-body" id="sheet-body"></div>
+  </section>
+
+  <div id="toast"></div>
+</div>
+
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════════════════════
+   1 · Storage — persists settings + last position + offline books
+   ══════════════════════════════════════════════════════════════ */
+const Store = (() => {
+  const mem = new Map();
+  const PREFIX = "vigil:";                 // the origin is shared with other Pages projects
+  const isBook = k => k.startsWith("bk:"); // books go to IndexedDB; everything else is small
+
+  /* localStorage — settings, last position, offline index.
+     Safari in private mode has the object but throws on write, so probe it. */
+  let ls = null;
+  try {
+    const t = PREFIX + "probe";
+    localStorage.setItem(t, "1"); localStorage.removeItem(t);
+    ls = localStorage;
+  } catch (_) { ls = null; }
+
+  /* IndexedDB — downloaded books, far too large for localStorage. */
+  const DB = "vigil", TABLE = "books";
+  let dbp = null;
+  function openDB(){
+    if (dbp) return dbp;
+    dbp = new Promise((res, rej) => {
+      let req;
+      try { req = indexedDB.open(DB, 1); } catch (e) { return rej(e); }
+      req.onupgradeneeded = () => {
+        const d = req.result;
+        if (!d.objectStoreNames.contains(TABLE)) d.createObjectStore(TABLE);
+      };
+      req.onsuccess = () => res(req.result);
+      req.onerror   = () => rej(req.error);
+      req.onblocked = () => rej(new Error("blocked"));
+    }).catch(e => { dbp = null; throw e; });   // let a failed open be retried
+    return dbp;
+  }
+  function tx(mode, fn){
+    return openDB().then(d => new Promise((res, rej) => {
+      const t = d.transaction(TABLE, mode);
+      let out;
+      t.oncomplete = () => res(out);
+      t.onerror    = () => rej(t.error);
+      t.onabort    = () => rej(t.error || new Error("aborted"));   // quota lands here
+      const r = fn(t.objectStore(TABLE));
+      if (r) r.onsuccess = () => { out = r.result; };
+    }));
+  }
+
+  return {
+    backed: !!ls,
+    async get(key){
+      if (mem.has(key)) return mem.get(key);
+      let v = null;
+      if (isBook(key)) {
+        try { const r = await tx("readonly", s => s.get(key)); if (r != null) v = r; }
+        catch (_) { return null; }                 // don't cache a miss we couldn't read
+      } else if (ls) {
+        try { const r = ls.getItem(PREFIX + key); if (r != null) v = JSON.parse(r); }
+        catch (_) { v = null; }
+      }
+      mem.set(key, v);
+      return v;
+    },
+    async set(key, value){
+      mem.set(key, value);
+      if (isBook(key)) {
+        try { await tx("readwrite", s => s.put(value, key)); }
+        catch (_) { return false; }                // out of quota, or no IndexedDB
+      } else if (ls) {
+        try { ls.setItem(PREFIX + key, JSON.stringify(value)); }
+        catch (_) { return false; }
+      }
+      return true;
+    },
+    async del(key){
+      mem.delete(key);
+      if (isBook(key)) { try { await tx("readwrite", s => s.delete(key)); } catch (_) {} }
+      else if (ls)     { try { ls.removeItem(PREFIX + key); } catch (_) {} }
+    }
+  };
+})();
+
+/* ══════════════════════════════════════════════════════════════
+   2 · Canon — USFM ids + chapter counts (Protestant order)
+   ══════════════════════════════════════════════════════════════ */
+const BOOKS = [
+  ["GEN","Genesis",50],["EXO","Exodus",40],["LEV","Leviticus",27],["NUM","Numbers",36],
+  ["DEU","Deuteronomy",34],["JOS","Joshua",24],["JDG","Judges",21],["RUT","Ruth",4],
+  ["1SA","1 Samuel",31],["2SA","2 Samuel",24],["1KI","1 Kings",22],["2KI","2 Kings",25],
+  ["1CH","1 Chronicles",29],["2CH","2 Chronicles",36],["EZR","Ezra",10],["NEH","Nehemiah",13],
+  ["EST","Esther",10],["JOB","Job",42],["PSA","Psalms",150],["PRO","Proverbs",31],
+  ["ECC","Ecclesiastes",12],["SNG","Song of Solomon",8],["ISA","Isaiah",66],["JER","Jeremiah",52],
+  ["LAM","Lamentations",5],["EZK","Ezekiel",48],["DAN","Daniel",12],["HOS","Hosea",14],
+  ["JOL","Joel",3],["AMO","Amos",9],["OBA","Obadiah",1],["JON","Jonah",4],
+  ["MIC","Micah",7],["NAM","Nahum",3],["HAB","Habakkuk",3],["ZEP","Zephaniah",3],
+  ["HAG","Haggai",2],["ZEC","Zechariah",14],["MAL","Malachi",4],
+  ["MAT","Matthew",28],["MRK","Mark",16],["LUK","Luke",24],["JHN","John",21],
+  ["ACT","Acts",28],["ROM","Romans",16],["1CO","1 Corinthians",16],["2CO","2 Corinthians",13],
+  ["GAL","Galatians",6],["EPH","Ephesians",6],["PHP","Philippians",4],["COL","Colossians",4],
+  ["1TH","1 Thessalonians",5],["2TH","2 Thessalonians",3],["1TI","1 Timothy",6],["2TI","2 Timothy",4],
+  ["TIT","Titus",3],["PHM","Philemon",1],["HEB","Hebrews",13],["JAS","James",5],
+  ["1PE","1 Peter",5],["2PE","2 Peter",3],["1JN","1 John",5],["2JN","2 John",1],
+  ["3JN","3 John",1],["JUD","Jude",1],["REV","Revelation",22]
+].map(([id,name,chapters],i) => ({ id, name, chapters, ot: i < 39 }));
+
+const byId = Object.fromEntries(BOOKS.map(b => [b.id, b]));
+const OT_COUNT = 39;
+
+function step(bookId, chapter, dir){
+  const i = BOOKS.findIndex(b => b.id === bookId);
+  if (i < 0) return null;
+  let c = chapter + dir;
+  if (c >= 1 && c <= BOOKS[i].chapters) return { book: bookId, chapter: c };
+  const j = i + dir;
+  if (j < 0 || j >= BOOKS.length) return null;
+  return { book: BOOKS[j].id, chapter: dir > 0 ? 1 : BOOKS[j].chapters };
+}
+
+/* ══════════════════════════════════════════════════════════════
+   3 · Sources — HelloAO (free, no key) and Crossway ESV (your key)
+   ══════════════════════════════════════════════════════════════ */
+const AO = "https://bible.helloao.org";
+const ESV_ENDPOINT = "https://api.esv.org/v3/passage/text/";
+
+/* A chapter is normalised to:
+   { blocks: [ {kind:'heading'|'sub'|'p'|'poem', indent, runs:[{t,v,woc}]} ],
+     credit: {name, note, url} }                                            */
+
+function Builder(){
+  const blocks = [];
+  let cur = null;
+  return {
+    blocks,
+    flush(){ if (cur && !cur.runs.length) blocks.pop(); cur = null; },
+    heading(text){
+      this.flush();
+      if (text.trim()) blocks.push({ kind:"heading", text: text.trim() });
+    },
+    sub(text){
+      this.flush();
+      if (text.trim()) blocks.push({ kind:"sub", text: text.trim() });
+    },
+    add(text, verse, kind, indent, woc){
+      if (text == null || text === "") { if (verse == null) return; text = ""; }
+      indent = indent || 0;
+      if (!cur || cur.kind !== kind || cur.indent !== indent){
+        this.flush();
+        cur = { kind, indent, runs: [] };
+        blocks.push(cur);
+      }
+      cur.runs.push({ t: text, v: verse, woc: !!woc });
+    },
+    brk(){ if (cur) { const k = cur.kind, i = cur.indent; this.flush(); cur = { kind:k, indent:i, runs:[] }; blocks.push(cur); } }
+  };
+}
+
+/* ── HelloAO ───────────────────────────────────────────────── */
+async function fetchAO(translation, book, chapter){
+  const res = await fetch(`${AO}/api/${encodeURIComponent(translation)}/${book}/${chapter}.json`);
+  if (!res.ok) throw new Error(`${res.status}`);
+  const data = await res.json();
+  const b = Builder();
+  let pending = null;   // verse number waiting to attach to its first run
+
+  for (const item of (data.chapter && data.chapter.content) || []){
+    if (item.type === "heading"){
+      b.heading((item.content || []).join(" "));
+    } else if (item.type === "line_break"){
+      b.flush();
+    } else if (item.type === "hebrew_subtitle"){
+      b.sub((item.content || []).filter(x => typeof x === "string").join(" "));
+    } else if (item.type === "verse"){
+      pending = item.number;
+      for (const part of item.content || []){
+        if (typeof part === "string"){
+          b.add(part, pending, "p", 0, false); pending = null;
+        } else if (part && typeof part.text === "string"){
+          const poem = typeof part.poem === "number";
+          b.add(part.text, pending, poem ? "poem" : "p", poem ? part.poem : 0, part.wordsOfJesus);
+          pending = null;
+        } else if (part && part.lineBreak){
+          b.brk();
+        } else if (part && typeof part.heading === "string"){
+          b.heading(part.heading);
+        }
+        /* footnote refs ({noteId}) are intentionally dropped */
+      }
+    }
+  }
+  b.flush();
+
+  const t = data.translation || {};
+  return {
+    blocks: b.blocks,
+    bookName: (data.book && data.book.commonName) || byId[book].name,
+    chapters: (data.book && data.book.numberOfChapters) || byId[book].chapters,
+    credit: { name: t.name || translation, note: t.licenseNotes || "Free-use text via HelloAO", url: t.website || null }
+  };
+}
+
+/* ── Crossway ESV ──────────────────────────────────────────── */
+async function fetchESV(key, book, chapter){
+  const q = `${byId[book].name} ${chapter}`;
+  const params = new URLSearchParams({
+    q,
+    "include-passage-references":"false",
+    "include-verse-numbers":"true",
+    "include-first-verse-numbers":"true",
+    "include-footnotes":"false",
+    "include-footnote-body":"false",
+    "include-headings":"true",
+    "include-short-copyright":"false",
+    "include-copyright":"false",
+    "include-passage-horizontal-lines":"false",
+    "include-heading-horizontal-lines":"false",
+    "indent-using":"space",
+    "indent-paragraphs":"0",
+    "indent-poetry":"true",
+    "indent-poetry-lines":"2",
+    "indent-declares":"0",
+    "indent-psalm-doxology":"0",
+    "line-length":"0"
+  });
+  const res = await fetch(`${ESV_ENDPOINT}?${params}`, {
+    headers: { Authorization: `Token ${key.trim()}` }
+  });
+  if (res.status === 401 || res.status === 403) throw new Error("badkey");
+  if (!res.ok) throw new Error(`${res.status}`);
+  const data = await res.json();
+  const raw = (data.passages && data.passages[0]) || "";
+  if (!raw.trim()) throw new Error("empty");
+  return { blocks: parseESV(raw), bookName: byId[book].name, chapters: byId[book].chapters,
+           credit: { name:"English Standard Version",
+                     note:"Scripture quotations are from the ESV® Bible (The Holy Bible, English Standard Version®), © 2001 by Crossway, a publishing ministry of Good News Publishers. Used by permission. All rights reserved.",
+                     url:"https://www.esv.org" } };
+}
+
+/* The ESV text endpoint returns one line per paragraph or poetry line,
+   verse markers as [n], and poetry indented in multiples of two spaces. */
+function parseESV(raw){
+  const b = Builder();
+  const text = raw.replace(/\s*\(ESV\)\s*$/,"");
+  const lines = text.split("\n");
+  let seenVerse = false;
+
+  /* ESV's paragraph indent is a server-side setting and prose can arrive
+     already indented. Measure the shallowest verse line and treat that as
+     the zero point, so only genuine poetry reads as indented. */
+  let base = Infinity;
+  for (const line of lines){
+    if (!line.trim() || !/\[\d+(?::\d+)?\]/.test(line)) continue;
+    base = Math.min(base, (line.match(/^ */) || [""])[0].length);
+  }
+  if (!isFinite(base)) base = 0;
+
+  for (const line of lines){
+    if (!line.trim()) { b.flush(); continue; }
+
+    const lead = Math.max(0, (line.match(/^ */) || [""])[0].length - base);
+    const indent = Math.min(3, Math.round(lead / 2));
+    const body = line.trim();
+    const hasVerse = /\[\d+(?::\d+)?\]/.test(body);
+
+    if (!hasVerse){
+      if (!seenVerse && /[.!?]["'\u201d\u2019]?$/.test(body)) { b.sub(body); continue; }
+      if (indent === 0 && body.length < 74 && !/[.,;:!?\u201d\u2019"']$/.test(body)) { b.heading(body); continue; }
+    }
+
+    const parts = body.split(/\[(\d+(?::\d+)?)\]/);
+    let verse = null;
+    for (let i = 0; i < parts.length; i++){
+      if (i % 2 === 1){
+        const m = parts[i].split(":");
+        verse = parseInt(m[m.length - 1], 10);
+        seenVerse = true;
+      } else {
+        const chunk = parts[i].replace(/\s+/g," ").trim();
+        if (!chunk && verse == null) continue;
+        b.add(chunk, verse, indent ? "poem" : "p", indent, false);
+        verse = null;
+      }
+    }
+  }
+  b.flush();
+  return b.blocks;
+}
+
+/* ── Offline sample, shown only when nothing can be fetched ── */
+const SAMPLE = {
+  key: "PSA/23",
+  data: {
+    bookName: "Psalms", chapters: 150,
+    credit: { name: "King James Version", note: "Public domain \u00b7 bundled sample", url: null },
+    blocks: [
+      { kind:"sub", text:"A Psalm of David." },
+      { kind:"poem", indent:0, runs:[{ v:1, t:"The LORD is my shepherd; I shall not want." }] },
+      { kind:"poem", indent:0, runs:[{ v:2, t:"He maketh me to lie down in green pastures: he leadeth me beside the still waters." }] },
+      { kind:"poem", indent:0, runs:[{ v:3, t:"He restoreth my soul: he leadeth me in the paths of righteousness for his name\u2019s sake." }] },
+      { kind:"poem", indent:0, runs:[{ v:4, t:"Yea, though I walk through the valley of the shadow of death, I will fear no evil: for thou art with me; thy rod and thy staff they comfort me." }] },
+      { kind:"poem", indent:0, runs:[{ v:5, t:"Thou preparest a table before me in the presence of mine enemies: thou anointest my head with oil; my cup runneth over." }] },
+      { kind:"poem", indent:0, runs:[{ v:6, t:"Surely goodness and mercy shall follow me all the days of my life: and I will dwell in the house of the LORD for ever." }] }
+    ]
+  }
+};
+
+/* ══════════════════════════════════════════════════════════════
+   4 · State
+   ══════════════════════════════════════════════════════════════ */
+const S = {
+  translation: "BSB",
+  translationName: "Berean Standard Bible",
+  esvKey: "",
+  book: "JHN",
+  chapter: 1,
+  lum: 68, warm: 9,
+  fs: 19, lh: 1.68, measure: 34,
+  face: "book", verses: "on", layout: "para", woc: "off",
+  awake: false, autohide: true
+};
+
+const chapterCache = new Map();          // "TID/BOOK/CH" -> normalised chapter
+const offlineBooks = new Set();          // "TID/BOOK" already downloaded
+let translations = null;                 // lazily fetched list
+let wakeLock = null;
+
+const $ = s => document.querySelector(s);
+const el = (tag, cls, txt) => { const n = document.createElement(tag); if (cls) n.className = cls; if (txt != null) n.textContent = txt; return n; };
+
+/* ══════════════════════════════════════════════════════════════
+   5 · Appearance
+   ══════════════════════════════════════════════════════════════ */
+function applyLook(){
+  const r = document.documentElement.style;
+  const L = S.lum, W = S.warm;
+  r.setProperty("--ink",       `hsl(38 ${W}% ${L}%)`);
+  r.setProperty("--ink-dim",   `hsl(38 ${Math.round(W*0.8)}% ${Math.round(L*0.62)}%)`);
+  r.setProperty("--ink-faint", `hsl(38 ${Math.round(W*0.7)}% ${Math.round(L*0.38)}%)`);
+  r.setProperty("--gilt",      `hsl(41 ${34 + Math.round(W*0.5)}% ${Math.round(L*0.74)}%)`);
+  r.setProperty("--gilt-dim",  `hsl(41 ${28 + Math.round(W*0.4)}% ${Math.round(L*0.46)}%)`);
+  r.setProperty("--ash",       `hsl(40 8% ${Math.max(9, Math.round(L*0.18))}%)`);
+  r.setProperty("--fs", S.fs + "px");
+  r.setProperty("--lh", S.lh);
+  r.setProperty("--measure", S.measure + "rem");
+  document.body.dataset.face   = S.face;
+  document.body.dataset.verses = S.verses;
+  document.body.dataset.layout = S.layout;
+  document.body.dataset.woc    = S.woc;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   6 · Rendering
+   ══════════════════════════════════════════════════════════════ */
+function renderChapter(ch){
+  const page = $("#page");
+  page.innerHTML = "";
+
+  const ref = el("p","ref-line", `${ch.bookName} ${S.chapter} · ${S.translation}`);
+  page.appendChild(ref);
+
+  const blocks = S.layout === "verse" ? toVerseLines(ch.blocks) : ch.blocks;
+  let capUsed = false;
+
+  blocks.forEach((blk, i) => {
+    if (blk.kind === "heading"){ page.appendChild(el("h2","hd", blk.text)); return; }
+    if (blk.kind === "sub"){ page.appendChild(el("p","sub", blk.text)); return; }
+
+    const p = el("p", blk.kind === "poem" ? "pg poem" : "pg");
+    if (blk.kind === "poem"){
+      p.style.setProperty("--ind", String(Math.max(1, blk.indent || 1)));
+      const nxt = blocks[i+1];
+      if (!nxt || nxt.kind !== "poem") p.classList.add("last");
+    }
+
+    let first = true;
+    let tail = "";          // last text written, so spacing stays single
+    let afterMark = false;  // a verse number or the numeral already supplies the gap
+
+    for (const run of blk.runs){
+      if (run.v != null){
+        if (first && !capUsed && S.layout !== "verse"){
+          p.appendChild(el("span","cap", String(S.chapter)));
+          capUsed = true;                       // verse 1's number is implied by the numeral
+        } else {
+          p.appendChild(el("span","vn", String(run.v)));
+        }
+        afterMark = true;
+      }
+      if (run.t){
+        const needsSpace = !afterMark && tail && !/[\s\u201c(]$/.test(tail) && !/^[\s.,;:!?)\u201d\u2019]/.test(run.t);
+        const t = el("span", run.woc ? "woc" : null);
+        t.textContent = (needsSpace ? " " : "") + run.t;
+        p.appendChild(t);
+        tail = run.t;
+        afterMark = false;
+      }
+      first = false;
+    }
+    if (p.childNodes.length) page.appendChild(p);
+  });
+
+  page.appendChild(el("div","close-mark","\u25c6"));
+
+  const col = el("div","colophon");
+  col.appendChild(document.createTextNode(ch.credit.name + " \u00b7 "));
+  if (ch.credit.url){
+    const a = el("a", null, ch.credit.url.replace(/^https?:\/\//,"").replace(/\/$/,""));
+    a.href = ch.credit.url; a.target = "_blank"; a.rel = "noopener";
+    col.appendChild(a);
+    col.appendChild(el("br"));
+  }
+  if (ch.credit.note) col.appendChild(document.createTextNode(ch.credit.note));
+  page.appendChild(col);
+
+  $("#reader").scrollTop = 0;
+  updateProgress();
+}
+
+function toVerseLines(blocks){
+  const out = [];
+  let cur = null;
+  for (const blk of blocks){
+    if (blk.kind === "heading" || blk.kind === "sub"){ out.push(blk); cur = null; continue; }
+    for (const run of blk.runs){
+      if (run.v != null || !cur){ cur = { kind:"p", indent:0, runs:[] }; out.push(cur); }
+      cur.runs.push(run);
+    }
+  }
+  return out.filter(b => b.kind !== "p" || b.runs.length);
+}
+
+function showState(title, body, action){
+  const page = $("#page");
+  page.innerHTML = "";
+  const box = el("div","state");
+  if (title === null){ box.appendChild(el("div","spin")); }
+  else {
+    box.appendChild(el("h3", null, title));
+    if (body) box.appendChild(el("p", null, body));
+    if (action){
+      const btn = el("button","pillbtn primary", action.label);
+      btn.onclick = action.run;
+      box.appendChild(btn);
+    }
+  }
+  page.appendChild(box);
+  showChrome();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   7 · Loading
+   ══════════════════════════════════════════════════════════════ */
+async function getChapter(book, chapter){
+  const key = `${S.translation}/${book}/${chapter}`;
+  if (chapterCache.has(key)) return chapterCache.get(key);
+
+  const saved = await Store.get(`bk:${S.translation}:${book}`);
+  if (saved && saved[chapter]){
+    for (const [c, v] of Object.entries(saved)) chapterCache.set(`${S.translation}/${book}/${c}`, v);
+    offlineBooks.add(`${S.translation}/${book}`);
+    return saved[chapter];
+  }
+
+  const data = S.translation === "ESV"
+    ? await fetchESV(S.esvKey, book, chapter)
+    : await fetchAO(S.translation, book, chapter);
+  chapterCache.set(key, data);
+  return data;
+}
+
+let loadToken = 0;
+async function open(book, chapter, { animate = true } = {}){
+  if (!byId[book]) { book = "JHN"; chapter = 1; }   // never let a bad id reach state
+  const mine = ++loadToken;
+  S.book = book; S.chapter = chapter;
+  syncChrome();
+
+  if (S.translation === "ESV" && !S.esvKey){
+    showState("An ESV key is needed", "The ESV is licensed text, so it can only be read live from Crossway's API with your own key.",
+      { label:"Add key", run:() => openSheet("translations") });
+    return;
+  }
+
+  const page = $("#page");
+  if (animate) page.classList.add("turning");
+
+  let data;
+  try {
+    data = await getChapter(book, chapter);
+  } catch (err){
+    if (mine !== loadToken) return;
+    page.classList.remove("turning");
+    if (String(err.message) === "badkey"){
+      showState("That key was refused", "Crossway returned 401. Check the key, and make sure the application is approved at api.esv.org.",
+        { label:"Edit key", run:() => openSheet("translations") });
+    } else if (`${S.translation}/${book}/${chapter}` === `${S.translation}/PSA/23` || (book === "PSA" && chapter === 23)){
+      renderChapter(SAMPLE.data);
+      toast("Offline — showing the bundled sample");
+    } else {
+      showState("No connection to the text", "The reader couldn't reach the translation server. Try again, or read Psalm 23 from the copy bundled in this file.",
+        { label:"Try again", run:() => open(book, chapter) });
+    }
+    return;
+  }
+  if (mine !== loadToken) return;
+
+  if (data.chapters && byId[book]) byId[book].chapters = data.chapters;
+  renderChapter(data);
+  page.classList.remove("turning");
+  syncChrome();
+  save();
+  prefetchNeighbours(book, chapter);
+}
+
+function prefetchNeighbours(book, chapter){
+  for (const dir of [1, -1]){
+    const n = step(book, chapter, dir);
+    if (!n) continue;
+    const key = `${S.translation}/${n.book}/${n.chapter}`;
+    if (chapterCache.has(key)) continue;
+    (S.translation === "ESV"
+      ? (S.esvKey ? fetchESV(S.esvKey, n.book, n.chapter) : Promise.reject())
+      : fetchAO(S.translation, n.book, n.chapter)
+    ).then(d => chapterCache.set(key, d)).catch(() => {});
+  }
+}
+
+function go(dir){
+  const n = step(S.book, S.chapter, dir);
+  if (n) open(n.book, n.chapter);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   8 · Chrome + immersion
+   ══════════════════════════════════════════════════════════════ */
+let hideTimer = null;
+
+function showChrome(){
+  document.body.classList.remove("immersive");
+  clearTimeout(hideTimer);
+  if (S.autohide && !document.body.classList.contains("sheet-open")){
+    hideTimer = setTimeout(hideChrome, 2800);
+  }
+}
+function hideChrome(){
+  if (document.body.classList.contains("sheet-open")) return;
+  clearTimeout(hideTimer);
+  document.body.classList.add("immersive");
+}
+function toggleChrome(){
+  document.body.classList.contains("immersive") ? showChrome() : hideChrome();
+}
+
+function syncChrome(){
+  const name = (byId[S.book] || {}).name || S.book;
+  $("#btn-passage").innerHTML = "";
+  $("#btn-passage").append(document.createTextNode(`${name} ${S.chapter} `), Object.assign(document.createElement("small"), { textContent:"▾" }));
+  $("#btn-trans").textContent = S.translation;
+
+  for (const [id, dir] of [["#btn-prev",-1],["#btn-next",1]]){
+    const n = step(S.book, S.chapter, dir);
+    const btn = $(id);
+    btn.disabled = !n;
+    btn.querySelector("span").textContent = n ? `${(byId[n.book]||{}).name} ${n.chapter}` : "";
+  }
+}
+
+function updateProgress(){
+  const r = $("#reader");
+  const max = r.scrollHeight - r.clientHeight;
+  const pct = max > 8 ? Math.min(1, r.scrollTop / max) : 0;
+  $("#progress i").style.width = (pct * 100).toFixed(2) + "%";
+}
+
+/* ══════════════════════════════════════════════════════════════
+   9 · Sheets
+   ══════════════════════════════════════════════════════════════ */
+let sheetView = null;
+let pickedBook = null;
+
+function openSheet(view){
+  sheetView = view;
+  document.body.classList.add("sheet-open");
+  showChrome();
+  clearTimeout(hideTimer);
+  drawSheet();
+}
+function closeSheet(){
+  document.body.classList.remove("sheet-open");
+  sheetView = null; pickedBook = null;
+  showChrome();
+}
+
+function drawSheet(){
+  const body = $("#sheet-body");
+  const back = $("#sheet-back");
+  body.innerHTML = "";
+  back.hidden = true;
+
+  if (sheetView === "passage"){
+    $("#sheet-title").textContent = pickedBook ? (byId[pickedBook].name) : "Passage";
+    if (pickedBook){ back.hidden = false; drawChapters(body); }
+    else drawBooks(body);
+  } else if (sheetView === "settings"){
+    $("#sheet-title").textContent = "Reading";
+    drawSettings(body);
+  } else if (sheetView === "translations"){
+    $("#sheet-title").textContent = "Translation";
+    drawTranslations(body);
+  }
+}
+
+let testament = null;
+function drawBooks(body){
+  if (testament === null) testament = byId[S.book] && byId[S.book].ot ? "ot" : "nt";
+
+  const seg = el("div","seg");
+  for (const [k, label] of [["ot","Old Testament"],["nt","New Testament"]]){
+    const b = el("button", null, label);
+    b.setAttribute("aria-selected", String(testament === k));
+    b.onclick = () => { testament = k; drawSheet(); };
+    seg.appendChild(b);
+  }
+  body.appendChild(seg);
+
+  const grid = el("div","books");
+  for (const bk of BOOKS.filter(b => (testament === "ot") === b.ot)){
+    const b = el("button");
+    b.append(el("b", null, bk.name), el("span", null, String(bk.chapters)));
+    if (bk.id === S.book) b.setAttribute("aria-current","true");
+    b.onclick = () => {
+      if (bk.chapters === 1){ closeSheet(); open(bk.id, 1); return; }
+      pickedBook = bk.id; drawSheet(); body.scrollTop = 0;
+    };
+    grid.appendChild(b);
+  }
+  body.appendChild(grid);
+}
+
+function drawChapters(body){
+  const grid = el("div","chapters");
+  const bookId = pickedBook;           // closeSheet() clears pickedBook, so hold it here
+  const bk = byId[bookId];
+  for (let c = 1; c <= bk.chapters; c++){
+    const b = el("button", null, String(c));
+    if (bookId === S.book && c === S.chapter) b.setAttribute("aria-current","true");
+    b.onclick = () => { closeSheet(); open(bookId, c); };
+    grid.appendChild(b);
+  }
+  body.appendChild(grid);
+}
+
+function drawSettings(body){
+  const add = (n) => body.appendChild(n);
+  const group = (t) => add(el("div","group-title", t));
+
+  const row = (label, hint, control) => {
+    const r = el("div","row");
+    const l = el("div","lbl", label);
+    if (hint) l.appendChild(Object.assign(document.createElement("em"), { textContent: hint }));
+    r.append(l, control);
+    add(r);
+    return r;
+  };
+
+  const steps = (options, current, onPick) => {
+    const wrap = el("div","steps");
+    for (const [val, label] of options){
+      const b = el("button", null, label);
+      b.setAttribute("aria-selected", String(current === val));
+      b.onclick = () => { onPick(val); applyLook(); redrawKeepScroll(); drawSheet(); save(); };
+      wrap.appendChild(b);
+    }
+    return wrap;
+  };
+
+  const slider = (min, max, stepSize, value, onInput) => {
+    const i = document.createElement("input");
+    i.type = "range"; i.min = min; i.max = max; i.step = stepSize; i.value = value;
+    i.oninput = () => { onInput(parseFloat(i.value)); applyLook(); updateProgress(); };
+    i.onchange = save;
+    return i;
+  };
+
+  const toggle = (checked, onChange) => {
+    const t = el("button","switch");
+    t.setAttribute("role","switch");
+    t.setAttribute("aria-checked", String(checked));
+    t.onclick = () => { onChange(!(t.getAttribute("aria-checked") === "true")); drawSheet(); save(); };
+    return t;
+  };
+
+  group("Light");
+  row("Brightness", "How far the text lifts off the black.", slider(46, 88, 1, S.lum, v => S.lum = v));
+  row("Warmth", "Pulls the ink from cool grey toward candlelight.", slider(0, 26, 1, S.warm, v => S.warm = v));
+
+  group("Type");
+  row("Size", null, slider(15, 30, 1, S.fs, v => S.fs = v));
+  row("Line height", null, steps([[1.5,"Tight"],[1.68,"Normal"],[1.92,"Airy"]], S.lh, v => S.lh = v));
+  row("Column", null, steps([[26,"Narrow"],[34,"Medium"],[44,"Wide"]], S.measure, v => S.measure = v));
+  row("Face", null, steps([["book","Book"],["modern","Modern"],["plain","Plain"]], S.face, v => S.face = v));
+
+  group("Page");
+  row("Verse numbers", null, steps([["on","Show"],["off","Hide"]], S.verses, v => S.verses = v));
+  row("Layout", "Flowing paragraphs, or one verse per line.", steps([["para","Paragraph"],["verse","Verse"]], S.layout, v => S.layout = v));
+  row("Words of Jesus", "Tint them a muted red.", steps([["off","Off"],["on","On"]], S.woc, v => S.woc = v));
+
+  group("Reading");
+  row("Hide controls automatically", "Or keep the bars up until you tap.",
+      toggle(S.autohide, v => { S.autohide = v; v ? showChrome() : (clearTimeout(hideTimer), document.body.classList.remove("immersive")); }));
+  row("Keep the screen awake", "Stops the display dimming mid-chapter.",
+      toggle(S.awake, v => { S.awake = v; v ? requestWake() : releaseWake(); }));
+
+  group("Translation");
+  const tr = el("div","row");
+  tr.append(el("div","lbl", S.translationName || S.translation));
+  const chg = el("button","pillbtn","Change");
+  chg.onclick = () => openSheet("translations");
+  tr.appendChild(chg);
+  add(tr);
+
+  group("Offline");
+  const bk = byId[S.book];
+  const dl = el("div","row");
+  const lbl = el("div","lbl", `${bk.name} \u00b7 ${bk.chapters} chapter${bk.chapters>1?"s":""}`);
+  const stored = offlineBooks.has(`${S.translation}/${S.book}`);
+  lbl.appendChild(Object.assign(document.createElement("em"), {
+    textContent: S.translation === "ESV"
+      ? "The ESV licence doesn't allow storing a local copy — it stays live."
+      : (stored ? "Saved on this device." : "Save every chapter of this book for reading without a signal.")
+  }));
+  const dlBtn = el("button", "pillbtn" + (stored ? "" : " primary"), stored ? "Remove" : "Download");
+  dlBtn.disabled = S.translation === "ESV";
+  dlBtn.onclick = () => stored ? removeBook(dlBtn) : downloadBook(dlBtn);
+  dl.append(lbl, dlBtn);
+  add(dl);
+
+  if (!Store.backed){
+    add(Object.assign(el("div","note"), { textContent:"Storage isn't available here, so settings and downloads last only for this session. Hosted on your own domain, they persist." }));
+  }
+}
+
+async function drawTranslations(body){
+  const back = $("#sheet-back");
+  back.hidden = false;
+
+  const esv = el("div");
+  esv.appendChild(Object.assign(el("div","group-title"), { textContent:"English Standard Version" }));
+  const keyRow = el("div","row");
+  keyRow.style.display = "block";
+  const input = document.createElement("input");
+  input.type = "password"; input.placeholder = "ESV API key"; input.value = S.esvKey;
+  input.autocomplete = "off"; input.spellcheck = false;
+  keyRow.appendChild(input);
+  const useBtn = el("button","pillbtn primary","Read the ESV");
+  useBtn.style.marginTop = "10px";
+  useBtn.onclick = () => {
+    S.esvKey = input.value.trim();
+    if (!S.esvKey) { toast("Enter a key first"); return; }
+    S.translation = "ESV"; S.translationName = "English Standard Version";
+    chapterCache.clear(); save(); closeSheet(); open(S.book, S.chapter);
+  };
+  keyRow.appendChild(useBtn);
+  esv.appendChild(keyRow);
+  esv.appendChild(Object.assign(el("div","note"), {
+    innerHTML: 'Keys are free for personal use from <a href="https://api.esv.org" target="_blank" rel="noopener">api.esv.org</a>. The key stays on this device and is sent only to Crossway.'
+  }));
+  body.appendChild(esv);
+
+  body.appendChild(Object.assign(el("div","group-title"), { textContent:"Free to read and to keep" }));
+  const list = el("div","tlist");
+  body.appendChild(list);
+
+  if (!translations){
+    const load = el("div","state"); load.appendChild(el("div","spin"));
+    list.appendChild(load);
+    try {
+      const res = await fetch(`${AO}/api/available_translations.json`);
+      const data = await res.json();
+      translations = (data.translations || data || [])
+        .filter(t => (t.language === "eng" || t.languageEnglishName === "English"))
+        .sort((a,b) => (a.englishName||a.name).localeCompare(b.englishName||b.name));
+    } catch (_){
+      translations = [{ id:"BSB", name:"Berean Standard Bible", englishName:"Berean Standard Bible", licenseNotes:"public domain" }];
+    }
+    if (sheetView !== "translations") return;
+    list.innerHTML = "";
+  }
+
+  for (const t of translations){
+    const b = el("button");
+    b.append(el("b", null, t.englishName || t.name), el("i", null, t.id));
+    if (t.id === S.translation) b.setAttribute("aria-current","true");
+    b.onclick = () => {
+      S.translation = t.id;
+      S.translationName = t.englishName || t.name;
+      chapterCache.clear();
+      save(); closeSheet(); open(S.book, S.chapter);
+    };
+    list.appendChild(b);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   10 · Offline download
+   ══════════════════════════════════════════════════════════════ */
+async function downloadBook(btn){
+  const bookId = S.book, tid = S.translation, bk = byId[bookId];
+  btn.disabled = true;
+  const nums = Array.from({ length: bk.chapters }, (_, i) => i + 1);
+  const out = {};
+  let done = 0, failed = false;
+
+  const label = () => { btn.textContent = `${done}/${bk.chapters}`; };
+  label();
+
+  const worker = async () => {
+    while (nums.length && !failed){
+      const c = nums.shift();
+      try {
+        const key = `${tid}/${bookId}/${c}`;
+        const data = chapterCache.get(key) || await fetchAO(tid, bookId, c);
+        chapterCache.set(key, data);
+        out[c] = data;
+      } catch (_){ failed = true; }
+      done++; label();
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+
+  btn.disabled = false;
+  if (failed){ btn.textContent = "Download"; toast("Download stopped — check the connection"); return; }
+
+  const ok = await Store.set(`bk:${tid}:${bookId}`, out);
+  if (!ok){ btn.textContent = "Download"; toast("That book was too large to store"); return; }
+  offlineBooks.add(`${tid}/${bookId}`);
+  const idx = (await Store.get("offline")) || [];
+  if (!idx.includes(`${tid}/${bookId}`)) { idx.push(`${tid}/${bookId}`); await Store.set("offline", idx); }
+  toast(`${bk.name} saved for offline`);
+  drawSheet();
+}
+
+async function removeBook(btn){
+  btn.disabled = true;
+  await Store.del(`bk:${S.translation}:${S.book}`);
+  offlineBooks.delete(`${S.translation}/${S.book}`);
+  const idx = ((await Store.get("offline")) || []).filter(k => k !== `${S.translation}/${S.book}`);
+  await Store.set("offline", idx);
+  btn.disabled = false;
+  toast(`${byId[S.book].name} removed`);
+  drawSheet();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   11 · Misc
+   ══════════════════════════════════════════════════════════════ */
+let toastTimer;
+function toast(msg){
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("on"), 2600);
+}
+
+async function requestWake(){
+  try { wakeLock = await navigator.wakeLock.request("screen"); }
+  catch (_) { S.awake = false; toast("This browser won't keep the screen on"); }
+}
+function releaseWake(){ if (wakeLock){ wakeLock.release().catch(()=>{}); wakeLock = null; } }
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && S.awake && !wakeLock) requestWake();
+});
+
+function redrawKeepScroll(){
+  const r = $("#reader");
+  const ratio = r.scrollHeight > r.clientHeight ? r.scrollTop / (r.scrollHeight - r.clientHeight) : 0;
+  const cached = chapterCache.get(`${S.translation}/${S.book}/${S.chapter}`);
+  if (!cached) return;
+  renderChapter(cached);
+  requestAnimationFrame(() => {
+    r.scrollTop = ratio * Math.max(0, r.scrollHeight - r.clientHeight);
+    updateProgress();
+  });
+}
+
+let saveTimer;
+function save(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    Store.set("settings", {
+      translation:S.translation, translationName:S.translationName, esvKey:S.esvKey,
+      lum:S.lum, warm:S.warm, fs:S.fs, lh:S.lh, measure:S.measure,
+      face:S.face, verses:S.verses, layout:S.layout, woc:S.woc,
+      awake:S.awake, autohide:S.autohide
+    });
+    Store.set("position", { book:S.book, chapter:S.chapter });
+  }, 250);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   12 · Input
+   ══════════════════════════════════════════════════════════════ */
+const reader = $("#reader");
+
+let lastY = 0, accUp = 0;
+reader.addEventListener("scroll", () => {
+  updateProgress();
+  const y = reader.scrollTop;
+  const dy = y - lastY;
+  if (dy > 4){ accUp = 0; hideChrome(); }
+  else if (dy < 0){
+    accUp += -dy;
+    if (accUp > 26 || y < 12){ accUp = 0; showChrome(); }
+  }
+  lastY = y;
+}, { passive: true });
+
+reader.addEventListener("click", (e) => {
+  if (e.target.closest("a,button")) return;
+  const sel = window.getSelection();
+  if (sel && !sel.isCollapsed) return;
+  toggleChrome();
+});
+
+let tx = 0, ty = 0, tt = 0, swiping = false;
+reader.addEventListener("touchstart", (e) => {
+  if (e.touches.length !== 1) { swiping = false; return; }
+  tx = e.touches[0].clientX; ty = e.touches[0].clientY; tt = Date.now(); swiping = true;
+}, { passive: true });
+
+reader.addEventListener("touchend", (e) => {
+  if (!swiping) return;
+  swiping = false;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - tx, dy = t.clientY - ty;
+  if (Date.now() - tt > 700) return;
+  if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.7) return;
+  go(dx < 0 ? 1 : -1);
+}, { passive: true });
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT") { if (e.key === "Escape") e.target.blur(); return; }
+  if (e.key === "Escape" && document.body.classList.contains("sheet-open")) { closeSheet(); return; }
+  if (e.key === "ArrowRight" || e.key === "l") go(1);
+  else if (e.key === "ArrowLeft" || e.key === "h") go(-1);
+  else if (e.key === "g") openSheet("passage");
+  else if (e.key === "." ) toggleChrome();
+});
+
+$("#btn-passage").onclick = () => openSheet("passage");
+$("#btn-trans").onclick   = () => openSheet("translations");
+$("#btn-settings").onclick= () => openSheet("settings");
+$("#btn-prev").onclick    = () => go(-1);
+$("#btn-next").onclick    = () => go(1);
+$("#sheet-close").onclick = closeSheet;
+$("#scrim").onclick       = closeSheet;
+$("#sheet-back").onclick  = () => {
+  if (sheetView === "passage" && pickedBook){ pickedBook = null; drawSheet(); }
+  else openSheet("settings");
+};
+/* drag the sheet down to dismiss */
+(() => {
+  const sheet = $("#sheet");
+  let y0 = null;
+  sheet.addEventListener("touchstart", (e) => {
+    if (!e.target.closest(".sheet-grip") && !e.target.closest(".sheet-head")) return;
+    y0 = e.touches[0].clientY; sheet.style.transition = "none";
+  }, { passive:true });
+  sheet.addEventListener("touchmove", (e) => {
+    if (y0 == null) return;
+    const d = Math.max(0, e.touches[0].clientY - y0);
+    sheet.style.transform = `translateY(${d}px)`;
+  }, { passive:true });
+  sheet.addEventListener("touchend", (e) => {
+    if (y0 == null) return;
+    const d = Math.max(0, e.changedTouches[0].clientY - y0);
+    sheet.style.transition = ""; sheet.style.transform = "";
+    y0 = null;
+    if (d > 90) closeSheet();
+  });
+})();
+
+/* ══════════════════════════════════════════════════════════════
+   13 · Boot
+   ══════════════════════════════════════════════════════════════ */
+(async function boot(){
+  const saved = await Store.get("settings");
+  if (saved) Object.assign(S, saved);
+  const pos = await Store.get("position");
+  if (pos && byId[pos.book]) { S.book = pos.book; S.chapter = pos.chapter; }
+  for (const k of (await Store.get("offline")) || []) offlineBooks.add(k);
+
+  applyLook();
+  syncChrome();
+  if (S.awake) requestWake();
+
+  showState(null);
+  await open(S.book, S.chapter, { animate:false });
+  showChrome();
+})();
+</script>
+</body>
+</html>
