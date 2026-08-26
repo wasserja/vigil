@@ -143,6 +143,10 @@ body[data-face="plain"]  #page{font-family:var(--ui);letter-spacing:-.005em}
 .poem + .pg{margin-top:1.05em}
 .pg + .poem{margin-top:.4em}
 .poem.last{margin-bottom:1.05em}
+/* The hanging indent would otherwise swallow the drop cap's right margin
+   and butt the first word against the numeral. Only the line carrying the
+   cap opts out; the rest of the stanza keeps its hang. */
+.poem.has-cap{text-indent:0}
 
 .vn{
   font-family:var(--ui);
@@ -772,26 +776,49 @@ function parseESV(raw){
   let seenVerse = false;
 
   /* ESV's paragraph indent is a server-side setting and prose can arrive
-     already indented. Measure the shallowest verse line and treat that as
-     the zero point, so only genuine poetry reads as indented. */
-  let base = Infinity;
+     already indented, so a leading space alone does not mean poetry.
+     Measure the shallowest verse-bearing line — but only trust it as the
+     zero point when nothing sits DEEPER. A passage with deeper lines is
+     poetry, and there the shallowest line is poetry too, not prose.
+     Without that second test a psalm loses its first indent level: every
+     level-1 line flattens to prose and only its continuations stay poetry,
+     which renders Psalm 23 as alternating paragraph and verse blocks. */
+  let base = Infinity, deepest = 0;
   for (const line of lines){
-    if (!line.trim() || !/\[\d+(?::\d+)?\]/.test(line)) continue;
-    base = Math.min(base, (line.match(/^ */) || [""])[0].length);
+    if (!line.trim()) continue;
+    const n = (line.match(/^ */) || [""])[0].length;
+    if (n > deepest) deepest = n;
+    if (/\[\d+(?::\d+)?\]/.test(line)) base = Math.min(base, n);
   }
   if (!isFinite(base)) base = 0;
+  if (deepest > base) base = 0;        // poetry present: indents are absolute
 
-  for (const line of lines){
+  for (let i = 0; i < lines.length; i++){
+    const line = lines[i];
     if (!line.trim()) { b.flush(); continue; }
 
-    const lead = Math.max(0, (line.match(/^ */) || [""])[0].length - base);
-    const indent = Math.min(3, Math.round(lead / 2));
+    /* A heading stands alone between blank lines; a line of poetry never
+       does. That, not indentation, is what separates them — ESV sets the
+       Hebrew letters of Psalm 119 at the SAME indent as the poetry they
+       head, so an indent test loses 22 of that psalm's 23 headings. */
+    const framed = (i === 0 || !lines[i-1].trim()) &&
+                   (i === lines.length - 1 || !lines[i+1].trim());
+
     const body = line.trim();
+    /* ESV keeps the verse marker in the margin and pushes a deeper poetic
+       line out with spaces AFTER it, so the indent of a verse's opening
+       line lives there rather than in the leading whitespace. Only the
+       marker that STARTS the line counts; mid-line markers in prose are
+       followed by an ordinary single space. */
+    const pad = /^\[\d+(?::\d+)?\]( +)/.exec(body);
+    const inner = pad ? pad[1].length - 1 : 0;
+    const lead = Math.max(0, (line.match(/^ */) || [""])[0].length - base) + inner;
+    const indent = Math.min(3, Math.round(lead / 2));
     const hasVerse = /\[\d+(?::\d+)?\]/.test(body);
 
     if (!hasVerse){
       if (!seenVerse && /[.!?]["'\u201d\u2019]?$/.test(body)) { b.sub(body); continue; }
-      if (indent === 0 && body.length < 74 && !/[.,;:!?\u201d\u2019"']$/.test(body)) { b.heading(body); continue; }
+      if (framed && body.length < 74 && !/[.,;:!?\u201d\u2019"']$/.test(body)) { b.heading(body); continue; }
     }
 
     const parts = body.split(/\[(\d+(?::\d+)?)\]/);
@@ -988,6 +1015,7 @@ function renderChapter(ch){
           const cap = el("span","cap", String(S.chapter));
           cap.dataset.v = String(run.v);        // the numeral stands in for verse 1's number
           p.appendChild(cap);
+          p.classList.add("has-cap");
           capUsed = true;
         } else {
           const vn = el("span","vn", String(run.v));

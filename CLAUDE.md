@@ -103,6 +103,26 @@ verse-bearing line and treats that as the indent baseline, because ESV's
 paragraph indent is a server-side setting and prose can arrive pre-indented —
 without the baseline pass, ordinary prose gets misread as poetry.
 
+**But the baseline is only trusted when nothing sits deeper** (fixed
+2026-08-26, on first contact with the live API). In a psalm the shallowest
+verse line is poetry, not prose, so taking it as zero flattened every
+level-1 poetic line to a paragraph and left only its continuations as verse.
+Psalm 23 came back as alternating prose and poetry with "He leads me in paths
+of righteousness" promoted to a *heading*. If a passage has any line deeper
+than that baseline, it is poetry and the indents are absolute.
+
+Two more things the live API taught us, neither guessable from the docs:
+
+- **A verse's opening indent lives AFTER the marker.** ESV keeps the marker
+  in the margin and pushes the line out with spaces following it — `[2]   He
+  makes` is a level deeper than `[1] The LORD`. `body.trim()` and the
+  whitespace collapse destroy it, so the pad width is measured first.
+- **Headings are not distinguished by indent.** ESV sets Psalm 119's Hebrew
+  letters at the *same* indent as the poetry they head (only `Aleph` is at
+  zero; the other 21 sit at 2). Heading detection therefore keys on a line
+  standing alone between blank lines, which is exact: 23 framed lines in
+  Psalm 119, 2 in Psalm 23, 5 in John 1, and never a poetic line.
+
 ## Licensing constraints — do not "simplify" these away
 
 - **ESV text is copyrighted.** It may only be fetched live with the user's key.
@@ -201,6 +221,12 @@ into a transcript, a commit, or this file.
   Capture ids into a local before closing any sheet.
 - Verse numbers and the drop cap already supply their own spacing. The renderer
   tracks an `afterMark` flag so text runs don't add a second space.
+- **A drop cap inside a poem block needs `.has-cap`.** `.poem` hangs its first
+  line with `text-indent:-.9em`, which swallows the floated cap's right margin
+  and butts the first word against the numeral — `23The LORD`. This was live in
+  every poetic chapter of every translation until 2026-08-26; it only surfaced
+  because fixing ESV poetry put a cap in a poem block for the first time on
+  that path. The renderer adds `has-cap` to the paragraph carrying the cap.
 
 - **The service worker is inert over plain `http://` on a LAN address.**
   Registration is guarded on `window.isSecureContext`, so testing at
