@@ -213,6 +213,39 @@ Storing nothing costs almost nothing and removes the whole class of risk.
 The key is entered at runtime and stored on-device. It must never be pasted
 into a transcript, a commit, or this file.
 
+## Open: the bottom gap (unresolved, 2026-08-26)
+
+On an installed iOS app the reading column stops short at the bottom while
+the top runs clean to the screen edge. Roughly half an inch of dead page.
+**Not fixed.** `height:100dvh` on `#app` was tried and made no visible
+difference. Do not re-try that.
+
+The measurements, so nobody has to take them again. From device screenshots,
+iPhone 16 Pro Max, 440x956pt at 3x, both themes identical:
+
+- The top fade is a correct 0 -> 54pt ramp anchored to the screen edge.
+- The bottom fade is the same 54pt ramp **displaced ~61pt upward**. Solving
+  for the ramp's zero point from three rows of the dark screenshot gives
+  61.8 / 60.6 / 60.5pt — tightly determined, not line-position noise.
+- ~61pt is suspiciously close to that device's **top** safe-area inset
+  (Dynamic Island, ~59-62pt), which is what suggested the shell's height was
+  resolving to screen-minus-top-inset. The dvh fix did not bear that out, so
+  treat the correlation as unexplained rather than as the mechanism.
+- Ruled out: theme (identical in both), the 46vh chapter-end padding (this
+  is mid-chapter), and line-position variation (measured across 8 scroll
+  offsets: mean 34.1px above vs 30.1px below, i.e. symmetric).
+- `#reader` clips at its own box, so no change to the mask gradient can put
+  text in that band. The element is short; the gradient is fine.
+
+Next candidates, in the order worth trying:
+
+1. Move the mask off the scroll container onto a wrapper element. A
+   `-webkit-mask-image` on an `overflow:auto` box is exactly the sort of
+   geometry WebKit gets wrong, and it would explain why only one edge misbehaves.
+2. `-webkit-fill-available` in place of `dvh`.
+3. Abandon the bottom mask entirely: a gradient overlay pinned to `bottom:0`
+   is visually identical and does not depend on the scroller's box at all.
+
 ## Gotchas already hit
 
 - `closeSheet()` resets `pickedBook` to `null`. A handler written as

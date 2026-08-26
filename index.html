@@ -73,12 +73,10 @@ body{
 @media (prefers-reduced-motion: reduce){ :root{--fade:1ms} }
 
 /* ── shell ────────────────────────────────────────────────── */
-/* height is stated explicitly rather than left to inset:0. On an installed
-   iOS app the fixed shell was coming up ~60pt short at the bottom, which
-   pulled the reader's mask ramp up with it and left a band of dead page
-   below the text — visible as a half-inch gap that the top edge did not
-   have. dvh resolves to the full screen under viewport-fit=cover; the vh
-   line is the fallback for anything that predates it. */
+/* Height is stated explicitly rather than left to inset:0. This is good
+   practice for a fixed iOS shell on its own merits, but note it did NOT
+   demonstrably fix the bottom-gap issue it was written for — see "Open:
+   the bottom gap" in CLAUDE.md. Do not treat it as the cure. */
 #app{position:fixed;top:0;left:0;right:0;bottom:0;
      height:100vh;height:100dvh;background:var(--void)}
 
