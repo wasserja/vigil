@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -16,15 +16,18 @@
 <style>
 /* ─────────────────────────────────────────────────────────────
    VIGIL — a dark room for reading scripture
-   Palette:  void #000000 · ink (warm parchment, tunable)
+   Palette:  dark  — void #000000 · ink (warm parchment, tunable)
+             light — vellum ground · iron-gall ink, never #fff/#000
              gilt #9C7F4A · ash #2A2823 · dim (muted ink)
+   Every colour below goes through a token. applyLook() writes all 20
+   per theme; nothing here hardcodes a tone. Dark is the priority.
    Type:     Book (Iowan/Charter) · Modern (ui-serif) · Plain (ui-sans)
    Signature: gilt chapter numeral set as a drop cap, verse numbers
              hung in the margin, and chrome that dissolves to nothing.
    ───────────────────────────────────────────────────────────── */
 
 *,*::before,*::after{box-sizing:border-box}
-html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000}
+html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--void)}
 body{
   -webkit-tap-highlight-color:transparent;
   -webkit-text-size-adjust:100%;
@@ -39,6 +42,23 @@ body{
   --gilt:#9c7f4a;
   --gilt-dim:#5c4a2b;
   --ash:#211f1b;
+
+  /* Surface tokens. Every panel tone in the sheets goes through these so a
+     theme is a set of values, not a second stylesheet. Dark values here are
+     the originals; applyLook() overwrites all of them per theme. */
+  --surface:#0b0a09;      /* inset: tracks, wells, unselected controls      */
+  --surface-hi:#151310;   /* the same surface, pressed                      */
+  --wash:#17150f;         /* gold-tinted: a selected segment                */
+  --wash-hi:#20190e;      /* gold-tinted: a switch that is on               */
+  --wash-soft:#100e0a;    /* gold-tinted, quieter: the chapter you are on   */
+  --line:#1c1a16;         /* control borders                                */
+  --line-hi:#221f1a;      /* the one border that sits a shade brighter      */
+  --line-soft:#131210;    /* row dividers                                   */
+  --track:#2b2822;        /* the hairline a slider thumb runs along         */
+  --press:#0f0e0c;        /* a chrome button held down                      */
+  --scrim:rgba(0,0,0,.72);/* behind an open sheet                           */
+  --woc:#a8624f;          /* words of Jesus                                 */
+  --void-0:rgba(0,0,0,0); /* --void at zero alpha, for the chrome scrims    */
 
   --face: "Iowan Old Style","Palatino Linotype",Palatino,"Sitka Text",Charter,"Bitstream Charter",Cambria,Georgia,serif;
   --ui: ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
@@ -140,7 +160,7 @@ body[data-face="plain"]  #page{font-family:var(--ui);letter-spacing:-.005em}
 body[data-verses="off"] .vn{display:none}
 
 .woc{color:var(--ink)}
-body[data-woc="on"] .woc{color:#a8624f}
+body[data-woc="on"] .woc{color:var(--woc)}
 
 /* signature: the gilt chapter numeral */
 .cap{
@@ -193,12 +213,12 @@ body[data-layout="verse"] .poem{
 #topbar{
   top:0;
   padding:calc(env(safe-area-inset-top,0px) + 8px) 10px 14px;
-  background:linear-gradient(to bottom,#000 42%,rgba(0,0,0,0));
+  background:linear-gradient(to bottom,var(--void) 42%,var(--void-0));
 }
 #botbar{
   bottom:0;
   padding:20px 10px calc(env(safe-area-inset-bottom,0px) + 10px);
-  background:linear-gradient(to top,#000 42%,rgba(0,0,0,0));
+  background:linear-gradient(to top,var(--void) 42%,var(--void-0));
 }
 body.immersive .chrome{opacity:0;pointer-events:none}
 body.immersive #topbar{transform:translateY(-6px)}
@@ -216,7 +236,7 @@ body.immersive #botbar{transform:translateY(6px)}
   white-space:nowrap;
   transition:color 160ms ease,background 160ms ease;
 }
-.btn:active{background:#0f0e0c;color:var(--ink)}
+.btn:active{background:var(--press);color:var(--ink)}
 .btn:focus-visible{outline:1.5px solid var(--gilt);outline-offset:1px}
 .btn.tag{
   font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
@@ -247,7 +267,7 @@ body.immersive #progress i{opacity:.16}
 /* ── sheets ───────────────────────────────────────────────── */
 #scrim{
   position:absolute;inset:0;z-index:8;
-  background:rgba(0,0,0,.72);
+  background:var(--scrim);
   backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
   opacity:0;pointer-events:none;
   transition:opacity 240ms ease;
@@ -258,7 +278,7 @@ body.sheet-open #scrim{opacity:1;pointer-events:auto}
   position:absolute;left:0;right:0;bottom:0;z-index:9;
   max-height:86%;
   display:flex;flex-direction:column;
-  background:#000;
+  background:var(--void);
   border-top:1px solid var(--ash);
   border-radius:16px 16px 0 0;
   transform:translateY(101%);
@@ -292,7 +312,7 @@ body.sheet-open #sheet{transform:translateY(0)}
 /* passage picker */
 .seg{
   display:flex;gap:2px;padding:3px;margin:0 0 14px;
-  background:#0b0a09;border-radius:11px;
+  background:var(--surface);border-radius:11px;
 }
 .seg button{
   flex:1;appearance:none;background:none;border:0;
@@ -300,7 +320,7 @@ body.sheet-open #sheet{transform:translateY(0)}
   letter-spacing:.1em;text-transform:uppercase;
   padding:9px 4px;border-radius:9px;cursor:pointer;
 }
-.seg button[aria-selected="true"]{background:#17150f;color:var(--gilt)}
+.seg button[aria-selected="true"]{background:var(--wash);color:var(--gilt)}
 
 .books{display:grid;grid-template-columns:1fr 1fr;gap:1px 10px}
 @media (min-width:560px){.books{grid-template-columns:repeat(3,1fr)}}
@@ -313,24 +333,24 @@ body.sheet-open #sheet{transform:translateY(0)}
 .books button b{font-weight:400;flex:1}
 .books button span{font-size:10px;color:var(--ink-faint);letter-spacing:.08em}
 .books button[aria-current="true"]{color:var(--gilt)}
-.books button:active{background:#0d0c0a}
+.books button:active{background:var(--press)}
 
 .chapters{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}
 @media (min-width:480px){.chapters{grid-template-columns:repeat(8,1fr)}}
 .chapters button{
-  appearance:none;background:#0a0908;border:1px solid transparent;
+  appearance:none;background:var(--surface);border:1px solid transparent;
   color:var(--ink);font:inherit;font-size:14px;
   aspect-ratio:1;border-radius:9px;cursor:pointer;
   font-variant-numeric:lining-nums;
 }
-.chapters button:active{background:#151310}
-.chapters button[aria-current="true"]{border-color:var(--gilt-dim);color:var(--gilt);background:#100e0a}
+.chapters button:active{background:var(--surface-hi)}
+.chapters button[aria-current="true"]{border-color:var(--gilt-dim);color:var(--gilt);background:var(--wash-soft)}
 
 /* settings rows */
 .row{
   display:flex;align-items:center;gap:12px;
   padding:15px 8px;
-  border-bottom:1px solid #131210;
+  border-bottom:1px solid var(--line-soft);
 }
 .row:last-child{border-bottom:0}
 .row .lbl{flex:1;font-size:14px;color:var(--ink)}
@@ -343,27 +363,27 @@ body.sheet-open #sheet{transform:translateY(0)}
   color:var(--gilt-dim);padding:22px 8px 6px;
 }
 .pillbtn{
-  appearance:none;background:#0d0c0a;border:1px solid #1c1a16;
+  appearance:none;background:var(--surface);border:1px solid var(--line);
   color:var(--ink);font:inherit;font-size:12.5px;
   padding:8px 13px;border-radius:20px;cursor:pointer;white-space:nowrap;
 }
-.pillbtn:active{background:#171512}
+.pillbtn:active{background:var(--surface-hi)}
 .pillbtn.primary{border-color:var(--gilt-dim);color:var(--gilt)}
 .pillbtn[disabled]{opacity:.35;pointer-events:none}
 
-.steps{display:flex;gap:3px;background:#0b0a09;padding:3px;border-radius:10px}
+.steps{display:flex;gap:3px;background:var(--surface);padding:3px;border-radius:10px}
 .steps button{
   appearance:none;background:none;border:0;color:var(--ink-dim);
   font:inherit;font-size:12px;padding:7px 11px;border-radius:8px;cursor:pointer;
 }
-.steps button[aria-selected="true"]{background:#17150f;color:var(--gilt)}
+.steps button[aria-selected="true"]{background:var(--wash);color:var(--gilt)}
 
 input[type=range]{
   -webkit-appearance:none;appearance:none;
   width:132px;height:24px;background:none;cursor:pointer;
 }
-input[type=range]::-webkit-slider-runnable-track{height:1px;background:#2b2822}
-input[type=range]::-moz-range-track{height:1px;background:#2b2822}
+input[type=range]::-webkit-slider-runnable-track{height:1px;background:var(--track)}
+input[type=range]::-moz-range-track{height:1px;background:var(--track)}
 input[type=range]::-webkit-slider-thumb{
   -webkit-appearance:none;width:15px;height:15px;border-radius:50%;
   background:var(--gilt);margin-top:-7px;
@@ -373,7 +393,7 @@ input[type=range]::-moz-range-thumb{
 }
 input[type=text],input[type=password]{
   appearance:none;width:100%;
-  background:#0a0908;border:1px solid #1c1a16;border-radius:9px;
+  background:var(--surface);border:1px solid var(--line);border-radius:9px;
   color:var(--ink);font:inherit;font-size:13px;
   padding:11px 12px;
 }
@@ -381,7 +401,7 @@ input:focus{outline:none;border-color:var(--gilt-dim)}
 
 .switch{
   appearance:none;width:44px;height:26px;flex:none;
-  background:#151310;border:1px solid #221f1a;border-radius:14px;
+  background:var(--surface-hi);border:1px solid var(--line-hi);border-radius:14px;
   position:relative;cursor:pointer;transition:background 180ms ease;
 }
 .switch::after{
@@ -389,7 +409,7 @@ input:focus{outline:none;border-color:var(--gilt-dim)}
   width:18px;height:18px;border-radius:50%;
   background:var(--ink-dim);transition:transform 180ms ease,background 180ms ease;
 }
-.switch[aria-checked="true"]{background:#20190e;border-color:var(--gilt-dim)}
+.switch[aria-checked="true"]{background:var(--wash-hi);border-color:var(--gilt-dim)}
 .switch[aria-checked="true"]::after{transform:translateX(18px);background:var(--gilt)}
 
 .tlist button{
@@ -397,7 +417,7 @@ input:focus{outline:none;border-color:var(--gilt-dim)}
   appearance:none;background:none;border:0;text-align:left;
   color:var(--ink);font:inherit;font-size:14.5px;
   padding:13px 8px;border-radius:9px;cursor:pointer;
-  border-bottom:1px solid #131210;
+  border-bottom:1px solid var(--line-soft);
 }
 .tlist button b{font-weight:400}
 .tlist button i{font-style:normal;font-size:11px;color:var(--ink-faint);flex:1;text-align:right}
@@ -431,7 +451,7 @@ input:focus{outline:none;border-color:var(--gilt-dim)}
   position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 74px);
   transform:translate(-50%,8px);
   z-index:12;pointer-events:none;
-  background:#0d0c0a;border:1px solid #1e1b16;
+  background:var(--surface);border:1px solid var(--line);
   color:var(--ink);font-family:var(--ui);font-size:12.5px;
   padding:9px 15px;border-radius:20px;
   opacity:0;transition:opacity 220ms ease,transform 220ms ease;
@@ -793,6 +813,7 @@ const S = {
   esvKey: "",
   book: "JHN",
   chapter: 1,
+  theme: "dark",
   lum: 68, warm: 9,
   fs: 19, lh: 1.68, measure: 34,
   face: "book", verses: "on", layout: "para", woc: "off",
@@ -810,15 +831,93 @@ const el = (tag, cls, txt) => { const n = document.createElement(tag); if (cls) 
 /* ══════════════════════════════════════════════════════════════
    5 · Appearance
    ══════════════════════════════════════════════════════════════ */
+/* Resolve "auto" against the system. Dark is the fallback everywhere, so a
+   browser with no prefers-color-scheme support stays on the OLED design. */
+function effectiveTheme(){
+  if (S.theme === "light") return "light";
+  if (S.theme === "auto")
+    return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  return "dark";
+}
+
 function applyLook(){
   const r = document.documentElement.style;
   const L = S.lum, W = S.warm;
-  r.setProperty("--ink",       `hsl(38 ${W}% ${L}%)`);
-  r.setProperty("--ink-dim",   `hsl(38 ${Math.round(W*0.8)}% ${Math.round(L*0.62)}%)`);
-  r.setProperty("--ink-faint", `hsl(38 ${Math.round(W*0.7)}% ${Math.round(L*0.38)}%)`);
-  r.setProperty("--gilt",      `hsl(41 ${34 + Math.round(W*0.5)}% ${Math.round(L*0.74)}%)`);
-  r.setProperty("--gilt-dim",  `hsl(41 ${28 + Math.round(W*0.4)}% ${Math.round(L*0.46)}%)`);
-  r.setProperty("--ash",       `hsl(40 8% ${Math.max(9, Math.round(L*0.18))}%)`);
+  const light = effectiveTheme() === "light";
+
+  if (!light){
+    /* ── Dark: the point of the app. Pure black ground, warm parchment ink
+       lifted off it by L. Untouched from the original. ───────────────── */
+    r.setProperty("--void",      "#000");
+    r.setProperty("--void-0",    "rgba(0,0,0,0)");
+    r.setProperty("--ink",       `hsl(38 ${W}% ${L}%)`);
+    r.setProperty("--ink-dim",   `hsl(38 ${Math.round(W*0.8)}% ${Math.round(L*0.62)}%)`);
+    r.setProperty("--ink-faint", `hsl(38 ${Math.round(W*0.7)}% ${Math.round(L*0.38)}%)`);
+    r.setProperty("--gilt",      `hsl(41 ${34 + Math.round(W*0.5)}% ${Math.round(L*0.74)}%)`);
+    r.setProperty("--gilt-dim",  `hsl(41 ${28 + Math.round(W*0.4)}% ${Math.round(L*0.46)}%)`);
+    r.setProperty("--ash",       `hsl(40 8% ${Math.max(9, Math.round(L*0.18))}%)`);
+    r.setProperty("--surface",   "#0b0a09");
+    r.setProperty("--surface-hi","#151310");
+    r.setProperty("--wash",      "#17150f");
+    r.setProperty("--wash-hi",   "#20190e");
+    r.setProperty("--wash-soft", "#100e0a");
+    r.setProperty("--line",      "#1c1a16");
+    r.setProperty("--line-hi",   "#221f1a");
+    r.setProperty("--line-soft", "#131210");
+    r.setProperty("--track",     "#2b2822");
+    r.setProperty("--press",     "#0f0e0c");
+    r.setProperty("--scrim",     "rgba(0,0,0,.72)");
+    r.setProperty("--woc",       "#a8624f");
+  } else {
+    /* ── Light: vellum, not white. The counterpart to the candle-lit
+       psalter is the same manuscript read by daylight — so the ground is
+       a warm off-white and the ink is iron-gall brown-black, never #fff
+       and never #000.
+
+       L is re-pointed rather than reused. In the dark it says how far the
+       INK lifts off the page; here it says how much light the PAGE gives
+       off, so dialling it down still means "less light in the room" and
+       the control keeps its meaning instead of inverting under you. The
+       ceiling is 97%, not 100%: a pure-white page at night is the thing
+       this app exists to avoid. W still means warmth, tinting both the
+       ground and the ink toward candle. ──────────────────────────────── */
+    const P  = Math.round(84 + (L - 46) * 13 / 42);   /* 46..88 -> 84..97 */
+    const sat = (n) => Math.round(n * 10) / 10;
+    /* W*0.9, not the W*0.55 you would expect from parity with the dark
+       palette: a light ground perceptually desaturates, so matching the
+       numbers makes vellum read as grey. This keeps Warmth meaning the
+       same thing to the eye in both themes. */
+    r.setProperty("--void",      `hsl(40 ${sat(W*0.9)}% ${P}%)`);
+    r.setProperty("--void-0",    `hsl(40 ${sat(W*0.9)}% ${P}% / 0)`);
+    r.setProperty("--ink",       `hsl(34 ${sat(12 + W*0.7)}% 18%)`);
+    r.setProperty("--ink-dim",   `hsl(34 ${sat(10 + W*0.5)}% 40%)`);
+    r.setProperty("--ink-faint", `hsl(34 ${sat(8 + W*0.4)}% 52%)`);
+    r.setProperty("--gilt",      "hsl(38 66% 28%)");
+    r.setProperty("--gilt-dim",  "hsl(38 48% 38%)");
+    r.setProperty("--ash",       `hsl(40 12% ${P-11}%)`);
+    r.setProperty("--surface",   `hsl(40 ${sat(W*0.8)}% ${P-4}%)`);
+    r.setProperty("--surface-hi",`hsl(40 ${sat(W*0.8)}% ${P-9}%)`);
+    r.setProperty("--wash",      `hsl(42 40% ${P-7}%)`);
+    r.setProperty("--wash-hi",   `hsl(42 52% ${P-11}%)`);
+    r.setProperty("--wash-soft", `hsl(42 30% ${P-5}%)`);
+    r.setProperty("--line",      `hsl(40 10% ${P-14}%)`);
+    r.setProperty("--line-hi",   `hsl(40 10% ${P-19}%)`);
+    r.setProperty("--line-soft", `hsl(40 10% ${P-7}%)`);
+    r.setProperty("--track",     `hsl(40 10% ${P-18}%)`);
+    r.setProperty("--press",     `hsl(40 ${sat(W*0.8)}% ${P-12}%)`);
+    r.setProperty("--scrim",     "rgba(28,24,17,.34)");
+    r.setProperty("--woc",       "#8f3f2c");
+  }
+
+  document.body.dataset.theme = light ? "light" : "dark";
+  /* Safari and Android chrome tint their UI from this. iOS reads the
+     status-bar meta once at launch and cannot be re-pointed later, which
+     is a known limit — see the note in CLAUDE.md. */
+  const tc = document.querySelector('meta[name="theme-color"]');
+  if (tc) tc.setAttribute("content",
+    light ? getComputedStyle(document.documentElement).getPropertyValue("--void").trim() || "#eae4d8"
+          : "#000000");
+
   r.setProperty("--fs", S.fs + "px");
   r.setProperty("--lh", S.lh);
   r.setProperty("--measure", S.measure + "rem");
@@ -1171,7 +1270,16 @@ function drawSettings(body){
   };
 
   group("Light");
-  row("Brightness", "How far the text lifts off the black.", slider(46, 88, 1, S.lum, v => S.lum = v));
+  row("Theme", S.theme === "auto"
+        ? `Following the system — ${effectiveTheme() === "light" ? "light" : "dark"} right now.`
+        : "Dark is pure black, for an OLED screen at night.",
+      steps([["dark","Dark"],["light","Light"],["auto","Auto"]], S.theme,
+            v => S.theme = v));
+  row("Brightness",
+      effectiveTheme() === "light"
+        ? "How much light the page gives off."
+        : "How far the text lifts off the black.",
+      slider(46, 88, 1, S.lum, v => S.lum = v));
   row("Warmth", "Pulls the ink from cool grey toward candlelight.", slider(0, 26, 1, S.warm, v => S.warm = v));
 
   group("Type");
@@ -1370,7 +1478,7 @@ function save(){
   saveTimer = setTimeout(() => {
     Store.set("settings", {
       translation:S.translation, translationName:S.translationName, esvKey:S.esvKey,
-      lum:S.lum, warm:S.warm, fs:S.fs, lh:S.lh, measure:S.measure,
+      theme:S.theme, lum:S.lum, warm:S.warm, fs:S.fs, lh:S.lh, measure:S.measure,
       face:S.face, verses:S.verses, layout:S.layout, woc:S.woc,
       awake:S.awake, autohide:S.autohide
     });
@@ -1480,8 +1588,16 @@ $("#sheet-back").onclick  = () => {
   showChrome();
 })();
 
+/* Repaint when the system flips, but only while the user has asked us to
+   follow it. Sheet is redrawn too so the "dark right now" line stays true. */
+matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+  if (S.theme !== "auto") return;
+  applyLook();
+  if (document.body.classList.contains("sheet-open")) drawSheet();
+});
+
 /* ══════════════════════════════════════════════════════════════
-   14 · Service worker — offline shell
+   15 · Service worker — offline shell
    Registered last, and deliberately never awaited: a worker that
    fails to install must not keep the reader from opening.
    Needs a secure context, so this is inert over plain http:// on a

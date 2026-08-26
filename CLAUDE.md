@@ -10,6 +10,20 @@ panels, gradients, or elevated surfaces. Text is warm parchment rather than
 white, and both its brightness and its warmth are user-tunable so it can be
 dialled down to near-candlelight.
 
+**Dark is the priority and the default.** A light mode was added 2026-08-26,
+and it is the same manuscript read by daylight rather than a second product:
+the ground is vellum and the ink is iron-gall brown-black — never `#fff`, never
+`#000`. The page tops out at 97% lightness because a pure-white page at night
+is the thing this app exists to avoid. If light mode ever reads as "white
+theme", it has drifted.
+
+The two knobs keep their meaning across themes rather than inverting. In the
+dark, Brightness says how far the INK lifts off the page; in the light it says
+how much light the PAGE gives off. Dialling down still means "less light in
+the room" either way. Warmth tints both, but the light ground applies it at
+`W*0.9` against dark's `W*0.55`, because a light ground perceptually
+desaturates and matching the numbers makes vellum read as grey.
+
 The visual reference is a monk's psalter read by candle, not a productivity app:
 a gilt chapter numeral set as a drop cap, verse numbers hung small and gold,
 uppercase letterspaced headings. Keep that direction. If a change would make it
@@ -36,6 +50,14 @@ Storage is real and on-device: `localStorage` (namespaced `vigil:`) for
 settings, last position and the offline index, IndexedDB for downloaded
 books. The origin is shared with every other GitHub Pages project on the
 account, hence the namespace.
+
+**Colour goes through tokens, never literals.** The stylesheet names 20 custom
+properties — `--void`, `--ink*`, `--gilt*`, `--ash`, plus surface tones
+(`--surface`, `--wash`, `--line`, `--track`, `--press`, `--scrim`, `--woc`) —
+and `applyLook()` writes every one of them per theme. There is no second
+stylesheet and no `prefers-color-scheme` block in the CSS: a theme is a set of
+values. If you add a colour, add a token and set it in BOTH branches, or light
+mode will silently inherit a dark tone.
 
 Roughly in order, the file contains: `Store` (persistence), `BOOKS` (the canon
 with chapter counts), the two source adapters, `Builder` (the normaliser),
@@ -144,3 +166,15 @@ without the baseline pass, ordinary prose gets misread as poetry.
 - Icons are generated, not hand-drawn: a gilt `V` in the body serif on pure
   black, rendered from HTML via headless Chrome. The maskable variant keeps
   its ink inside the inner-80% safe circle so Android's mask can't clip it.
+- **iOS pins the status bar style at launch.** `apple-mobile-web-app-status-
+  bar-style` is `black-translucent`, which draws the clock in white and lets
+  the page run under it — right for dark, wrong for light, and it cannot be
+  re-pointed at runtime once a home-screen app has launched. So in light mode
+  on an installed iOS app the clock may be hard to read. `theme-color` IS
+  updated live and fixes Safari-in-a-tab and Android; only the installed iOS
+  case is stuck. Fixing it properly means giving up the edge-to-edge bleed in
+  dark mode, which is a worse trade. Open, deliberately.
+- Gilt is not the same value in both themes. On black it is
+  `hsl(41 …% …%)` derived from L; on vellum it is a fixed, much darker
+  `hsl(38 66% 28%)`, because the L-derived gold falls to 3.9:1 on a light
+  ground. Verse numbers and the drop cap are set in it, so it has to hold.
