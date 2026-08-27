@@ -155,15 +155,16 @@ Two more things the live API taught us, neither guessable from the docs:
 2. ~~PWA files.~~ **Done 2026-08-26.** Manifest, four icons, and a service
    worker that precaches the shell. All paths are relative so one build serves
    both `/` locally and `/vigil/` on Pages.
-3. ~~Full-text search.~~ **Done 2026-08-26.** Over the books saved for
-   offline reading — no index, a linear scan of a flattened corpus built on
-   first search and cached per translation. Measured at 10-15ms per query
+3. ~~Full-text search.~~ **Done 2026-08-26**, extended to the ESV
+   2026-08-27. Over the books saved for offline reading — no index, a linear
+   scan of a flattened corpus built on first search and cached per
+   translation. Measured at 10-15ms per query
    over a whole-Bible-scale corpus (31,102 verses, 2.3MB) on desktop JSC, so
    an inverted index would have bought nothing but a second persisted
    structure to keep in sync. Quoted queries are phrases, bare words are
    ANDed, results cap at 300. A hit opens the chapter and lands on the verse.
-4. **ESV** — the parser is tested and fixed; ESV search is what remains.
-   See the ESV section below.
+4. ~~**ESV**.~~ **Done 2026-08-27.** Parser tested and fixed; search built on
+   `/v3/passage/search/`; copyright verified. See the ESV section below.
 5. **Larger screens: worth it, or not?** Open question, deliberately phrased
    as a question. The brief is an iPhone in the dark, and a reader that is
    excellent on one device beats one that is adequate everywhere — so the
@@ -298,14 +299,54 @@ constraint on the app's future, not just its present.
    Philemon all returned HTTP 200.
 3. ~~Verify the copyright wording.~~ **Done 2026-08-27**, and the notice we
    shipped was wrong — see "The two notices" below. Fixed in `ESV_NOTICE`.
-4. **ESV search via `/v3/passage/search/`.** Still open, and the strongest
-   remaining candidate: it is the one place ESV can reach parity, needs no
-   storage so it sidesteps the guideline-5 question entirely, and costs one
-   query against a 5,000/day budget. Open design question before building it —
-   whether ESV results share the search sheet with the offline corpus or read
-   as a distinct mode. They behave differently enough (network vs local,
-   Crossway's ranking vs our substring match) that saying so in the UI is
-   probably better than pretending they are one feature.
+4. ~~**ESV search via `/v3/passage/search/`.**~~ **Done 2026-08-27.** See
+   "ESV search" below for the endpoint's two reference-format traps and the
+   two design calls that were open.
+
+### ESV search
+
+Built 2026-08-27 on `/v3/passage/search/`. It is the one place the ESV reaches
+parity with the offline translations, and it needs no storage, so it sidesteps
+the guideline-5 question entirely. One query per search against a 5,000/day
+budget.
+
+`q` takes bare words (ANDed) or a `"quoted phrase"`, which is close enough to
+`parseQuery`'s own grammar that `parseQuery` and `highlight` are reused
+unchanged. Results come back in canonical order — not by relevance —
+100 to a page, which is their maximum.
+
+**Two traps in the reference format**, neither in the docs, both found by
+pulling 2,949 distinct references off the live endpoint and parsing every one:
+
+- **Psalms comes back singular.** `Psalm 3:2`, where our canon says "Psalms".
+  `esvBookByName` carries the alias.
+- **Single-chapter books drop the chapter.** `Jude 1` is book and *verse* —
+  not book and chapter. Same for Obadiah, Philemon, 2 John, 3 John. A naive
+  `Book C:V` parse fails on all five, and a naive `Book N` fallback would
+  open *chapter* N of every other book. So `refFromESV` only accepts the
+  short form for books that actually have one chapter.
+
+The whole sample parses (2,949/2,949, 58 books, no out-of-range chapters).
+`searchESV` still drops a result whose reference will not parse rather than
+render a row that opens nothing — a floor, not a path.
+
+**Two design calls, both deliberate:**
+
+1. **One sheet, not two modes.** The search sheet relabels itself when the
+   translation is ESV. The reason is not tidiness: the offline sheet's copy
+   promises the query "never sends your query anywhere", and that stops being
+   true on the ESV. The sheet now says the query goes to Crossway. If the two
+   engines ever need to diverge further, keep the honesty and split the copy —
+   do not quietly drop the line.
+2. **Enter to search, not type-ahead.** Offline search is free and debounced
+   at 160ms. A network search on the same trigger would spend a billed
+   round-trip per keystroke against a 60/minute cap. `run(q, page)` takes its
+   query as an argument and never reads the field, so "Load more" pages the
+   search the results actually belong to — reading the live input there means
+   editing the field and tapping Load more fetches page 2 of a *different*
+   query and renders it as page 1.
+
+`resultRow` is shared by both engines so they cannot drift apart.
 
 The key is entered at runtime and stored on-device. It must never be pasted
 into a transcript, a commit, or this file. For local testing there is a copy

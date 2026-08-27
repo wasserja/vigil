@@ -677,6 +677,7 @@ function step(bookId, chapter, dir){
    ══════════════════════════════════════════════════════════════ */
 const AO = "https://bible.helloao.org";
 const ESV_ENDPOINT = "https://api.esv.org/v3/passage/text/";
+const ESV_SEARCH_ENDPOINT = "https://api.esv.org/v3/passage/search/";
 
 /* Verbatim from api.esv.org's terms (checked 2026-08-27). Their API page
    carries a different notice from crossway.org/permissions/ -- no "ESV Text
@@ -1235,9 +1236,9 @@ function go(dir){
    apologise for: it works with no signal, which is when this app is
    used, and it never sends a query anywhere.
 
-   ESV is deliberately absent. Its text may not be stored, so there are
-   no ESV books to search — the sheet says so rather than silently
-   returning nothing.
+   The ESV cannot join that corpus — its text may not be stored — so it
+   is searched at Crossway instead, on their own endpoint. Same sheet,
+   same rows, different engine; see "ESV search" further down.
 
    No inverted index. A linear scan over the flattened corpus costs one
    toLowerCase per verse, which is a few tens of milliseconds even for a
@@ -1330,6 +1331,60 @@ function highlight(text, parsed){
     i = at + len;
   }
   return frag;
+}
+
+/* ── ESV search ─────────────────────────────────────────────────
+   Crossway has a search endpoint, so the ESV is the one translation that
+   can be searched without being stored. It searches the WHOLE Bible,
+   where the offline engine only sees what you downloaded — but it costs a
+   network round-trip and the query leaves the device, so the two are not
+   silently interchangeable and the sheet says which one is running.
+
+   Matching is close enough to ours to reuse parseQuery/highlight: bare
+   words are ANDed, a "quoted phrase" is a phrase. Results come back in
+   canonical order, 100 to a page.                                       */
+
+/* Their references are display strings, not structured, so they have to be
+   parsed back into a book id to be tappable. Two traps, both confirmed
+   against 2,949 distinct references from the live endpoint:
+     · Psalms comes back as the singular "Psalm 3:2".
+     · Single-chapter books drop the chapter — "Jude 1" is book and VERSE,
+       not book and chapter. So the short form is only accepted for books
+       that actually have one chapter, or every "Jude 1" would open Jude
+       chapter 1 with no verse and every "3 John 1" would be wrong. */
+const esvBookByName = (() => {
+  const m = Object.fromEntries(BOOKS.map(b => [b.name, b.id]));
+  m["Psalm"] = "PSA";
+  return m;
+})();
+
+function refFromESV(ref){
+  let m = /^(.*?) (\d+):(\d+)$/.exec(ref);
+  if (m && esvBookByName[m[1]]) return { b: esvBookByName[m[1]], c: +m[2], v: +m[3] };
+  m = /^(.*?) (\d+)$/.exec(ref);
+  const id = m && esvBookByName[m[1]];
+  if (id && byId[id].chapters === 1) return { b: id, c: 1, v: +m[2] };
+  return null;
+}
+
+const ESV_PAGE_SIZE = 100;                // their maximum
+
+async function searchESV(key, q, page){
+  const params = new URLSearchParams({ q, "page-size": ESV_PAGE_SIZE, page });
+  const res = await fetch(`${ESV_SEARCH_ENDPOINT}?${params}`, {
+    headers: { Authorization: `Token ${key.trim()}` }
+  });
+  if (res.status === 401 || res.status === 403) throw new Error("badkey");
+  if (!res.ok) throw new Error(`${res.status}`);
+  const d = await res.json();
+  const hits = [];
+  for (const r of d.results || []){
+    const ref = refFromESV(r.reference);
+    /* An unparseable reference would render a row that opens nothing, so
+       drop it. Nothing in the sample needed this; it is a floor, not a path. */
+    if (ref) hits.push({ ...ref, t: (r.content || "").replace(/\s+/g, " ").trim() });
+  }
+  return { hits, total: d.total_results || 0, page: d.page || page, pages: d.total_pages || 1 };
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1574,28 +1629,47 @@ function drawSettings(body){
 let searchQ = "";                 // survives a redraw, so the field keeps its text
 let searchSeq = 0;                // guards against a slow corpus build landing late
 
+/* ESV results are module-level for the same reason searchQ is: reopening the
+   sheet should show what you already spent a query on, not silently spend
+   another one. */
+let esvSearch = { q:"", hits:[], total:0, page:0, pages:0 };
+
+/* One result row, shared by both engines so they cannot drift apart. */
+function resultRow(h, parsed){
+  const b = el("button");
+  b.appendChild(el("span","rref", `${byId[h.b].name} ${h.c}:${h.v}`));
+  b.appendChild(highlight(h.t, parsed));
+  /* Capture before closing: closeSheet() tears down sheet state, and
+     arguments evaluate after it runs. */
+  const bk = h.b, ch = h.c, vs = h.v;
+  b.onclick = () => { closeSheet(); open(bk, ch, { verse: vs }); };
+  return b;
+}
+
 function drawSearch(body){
+  const isESV = S.translation === "ESV";
   const wrap = el("div");
   const input = document.createElement("input");
-  input.type = "search"; input.placeholder = "Search the books you have saved";
+  input.type = "search";
+  input.placeholder = isESV ? "Search the ESV" : "Search the books you have saved";
   input.value = searchQ; input.autocapitalize = "none"; input.autocorrect = "off";
   input.spellcheck = false;
   wrap.appendChild(input);
+
+  /* The offline sheet promises the query never leaves the phone. That stops
+     being true on the ESV, so say so rather than quietly breaking it. */
+  if (isESV) wrap.appendChild(Object.assign(el("div","note"), { textContent:
+    "The ESV cannot be stored on the device, so it is searched at Crossway and " +
+    "your query is sent to them. Searching a saved book never leaves the phone." }));
 
   const status = el("div","scount");
   const list = el("div","results");
   wrap.append(status, list);
   body.appendChild(wrap);
 
-  const saved = [...offlineBooks].filter(k => k.startsWith(S.translation + "/"));
+  if (isESV) return drawESVSearch(input, status, list);
 
-  if (S.translation === "ESV"){
-    list.appendChild(Object.assign(el("div","note"), { textContent:
-      "The ESV is licensed text and cannot be stored on the device, so there is nothing " +
-      "saved here to search. Switch to a public-domain translation and download a book first." }));
-    input.disabled = true;
-    return;
-  }
+  const saved = [...offlineBooks].filter(k => k.startsWith(S.translation + "/"));
   if (!saved.length){
     list.appendChild(Object.assign(el("div","note"), { textContent:
       "Search looks through the books you have saved for offline reading, so it works with " +
@@ -1609,7 +1683,7 @@ function drawSearch(body){
     const q = searchQ.trim();
     list.innerHTML = "";
     if (q.length < 2){
-      status.textContent = `${saved.length} book${saved.length === 1 ? "" : "s"} saved · type to search`;
+      status.textContent = `${saved.length} book${saved.length === 1 ? "" : "s"} saved \u00b7 type to search`;
       return;
     }
     status.textContent = "Searching\u2026";
@@ -1626,16 +1700,7 @@ function drawSearch(body){
       (total > hits.length ? ` \u00b7 showing the first ${hits.length}` : "");
 
     const frag = document.createDocumentFragment();
-    for (const h of hits){
-      const b = el("button");
-      b.appendChild(el("span","rref", `${byId[h.b].name} ${h.c}:${h.v}`));
-      b.appendChild(highlight(h.t, parsed));
-      /* Capture before closing: closeSheet() tears down sheet state, and
-         arguments evaluate after it runs. */
-      const bk = h.b, ch = h.c, vs = h.v;
-      b.onclick = () => { closeSheet(); open(bk, ch, { verse: vs }); };
-      frag.appendChild(b);
-    }
+    for (const h of hits) frag.appendChild(resultRow(h, parsed));
     list.appendChild(frag);
   };
 
@@ -1643,6 +1708,78 @@ function drawSearch(body){
   input.oninput = () => { searchQ = input.value; clearTimeout(t); t = setTimeout(render, 160); };
   input.onkeydown = (e) => { if (e.key === "Enter"){ e.preventDefault(); clearTimeout(t); render(); } };
   render();
+  if (!searchQ) setTimeout(() => input.focus(), 60);
+}
+
+/* Enter-to-search, not type-ahead: every keystroke would be a billed network
+   round-trip against a 60/minute cap. */
+function drawESVSearch(input, status, list){
+  const PROMPT = "Type a word or a \u201cquoted phrase\u201d, then press Enter.";
+
+  if (!S.esvKey){
+    list.appendChild(Object.assign(el("div","note"), { textContent:
+      "Add your ESV API key under Translation and the whole ESV becomes searchable \u2014 " +
+      "not only the books you have saved." }));
+    input.disabled = true;
+    return;
+  }
+
+  const more = el("button","pillbtn","Load more");
+  more.style.display = "block";
+  more.style.margin = "16px auto 0";
+
+  const paint = () => {
+    const parsed = parseQuery(esvSearch.q);
+    list.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    for (const h of esvSearch.hits) frag.appendChild(resultRow(h, parsed));
+    list.appendChild(frag);
+    const shown = esvSearch.hits.length;
+    status.textContent = `${esvSearch.total} verse${esvSearch.total === 1 ? "" : "s"}` +
+      (shown < esvSearch.total ? ` \u00b7 showing the first ${shown}` : "");
+    if (esvSearch.page < esvSearch.pages) list.appendChild(more);
+  };
+
+  /* The query is passed in, never read from the field: "Load more" must
+     page the search the results actually belong to, not whatever has been
+     typed since. */
+  const run = async (q, page) => {
+    if (q.length < 2){ status.textContent = PROMPT; return; }
+    const mine = ++searchSeq;
+    status.textContent = page > 1 ? "Loading more\u2026" : "Searching\u2026";
+    more.disabled = true;
+    try {
+      const r = await searchESV(S.esvKey, q, page);
+      if (mine !== searchSeq) return;        // a newer search already won
+      esvSearch = (page > 1 && esvSearch.q === q)
+        ? { ...r, q, hits: esvSearch.hits.concat(r.hits) }
+        : { ...r, q };
+      if (!esvSearch.total){ list.innerHTML = ""; status.textContent = "No verses found."; return; }
+      paint();
+    } catch (err){
+      if (mine !== searchSeq) return;
+      list.innerHTML = "";
+      status.textContent = err.message === "badkey"
+        ? "Crossway refused the key. Check it under Translation."
+        : "Could not reach Crossway. Check your connection.";
+    } finally {
+      more.disabled = false;
+    }
+  };
+
+  more.onclick = () => run(esvSearch.q, esvSearch.page + 1);
+  input.oninput = () => {
+    searchQ = input.value;
+    if (searchQ.trim() !== esvSearch.q) status.textContent = "Press Enter to search.";
+  };
+  /* blur so the keyboard drops and the results are actually visible. */
+  input.onkeydown = (e) => {
+    if (e.key === "Enter"){ e.preventDefault(); input.blur(); run(searchQ.trim(), 1); }
+  };
+
+  if (esvSearch.q && esvSearch.q === searchQ.trim() && esvSearch.hits.length) paint();
+  else status.textContent = PROMPT;
+
   if (!searchQ) setTimeout(() => input.focus(), 60);
 }
 
