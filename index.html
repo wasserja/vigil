@@ -209,6 +209,8 @@ body[data-layout="verse"] .poem{
   color:var(--ink-faint);
 }
 .colophon a{color:var(--ink-faint)}
+.colophon p{margin:.85em 0 0}
+.colophon p:first-of-type{margin-top:.45em}
 
 /* ── chrome (dissolves) ───────────────────────────────────── */
 .chrome{
@@ -676,6 +678,17 @@ function step(bookId, chapter, dir){
 const AO = "https://bible.helloao.org";
 const ESV_ENDPOINT = "https://api.esv.org/v3/passage/text/";
 
+/* Verbatim from api.esv.org's terms (checked 2026-08-27). Their API page
+   carries a different notice from crossway.org/permissions/ -- no "ESV Text
+   Edition" line, and the two restrictions follow "All rights reserved."
+   rather than preceding it. The API page governs our use, so it wins.
+   Do not paraphrase, reorder or trim this. The blank line is a paragraph
+   break in the colophon; the second paragraph is part of the required block. */
+const ESV_NOTICE =
+  "Scripture quotations are from the ESV\u00ae Bible (The Holy Bible, English Standard Version\u00ae), \u00a9 2001 by Crossway, a publishing ministry of Good News Publishers. Used by permission. All rights reserved. The ESV text may not be quoted in any publication made available to the public by a Creative Commons license. The ESV may not be translated into any other language."
+  + "\n\n"
+  + "Users may not copy or download more than 500 verses of the ESV Bible or more than one half of any book of the ESV Bible.";
+
 /* A chapter is normalised to:
    { blocks: [ {kind:'heading'|'sub'|'p'|'poem', indent, runs:[{t,v,woc}]} ],
      credit: {name, note, url} }                                            */
@@ -784,8 +797,8 @@ async function fetchESV(key, book, chapter){
   const raw = (data.passages && data.passages[0]) || "";
   if (!raw.trim()) throw new Error("empty");
   return { blocks: parseESV(raw), bookName: byId[book].name, chapters: byId[book].chapters,
-           credit: { name:"English Standard Version",
-                     note:"Scripture quotations are from the ESV® Bible (The Holy Bible, English Standard Version®), © 2001 by Crossway, a publishing ministry of Good News Publishers. Used by permission. All rights reserved.",
+           credit: { name:"English Standard Version (ESV)",
+                     note:ESV_NOTICE,
                      url:"https://www.esv.org" } };
 }
 
@@ -1063,14 +1076,16 @@ function renderChapter(ch){
   page.appendChild(el("div","close-mark","\u25c6"));
 
   const col = el("div","colophon");
-  col.appendChild(document.createTextNode(ch.credit.name + " \u00b7 "));
+  /* The separator is only earned when something follows it. */
+  col.appendChild(document.createTextNode(ch.credit.name + (ch.credit.url ? " \u00b7 " : "")));
   if (ch.credit.url){
     const a = el("a", null, ch.credit.url.replace(/^https?:\/\//,"").replace(/\/$/,""));
     a.href = ch.credit.url; a.target = "_blank"; a.rel = "noopener";
     col.appendChild(a);
-    col.appendChild(el("br"));
   }
-  if (ch.credit.note) col.appendChild(document.createTextNode(ch.credit.note));
+  if (ch.credit.note) ch.credit.note.split(/\n{2,}/).forEach(para => {
+    col.appendChild(el("p", null, para));
+  });
   page.appendChild(col);
 
   $("#reader").scrollTop = 0;

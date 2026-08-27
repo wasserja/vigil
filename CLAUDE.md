@@ -195,11 +195,11 @@ existed to test with. The seven guidelines, and where each lands:
 
 | Guideline | Where Vigil stands |
 |---|---|
-| Copyright citation as outlined by Crossway | Colophon carries their notice verbatim + link to esv.org. **Unverified** against their citation page — check the exact wording. |
+| Copyright citation as outlined by Crossway | **Verified 2026-08-27.** Colophon carries the api.esv.org notice verbatim (both paragraphs) + the required link to esv.org + the letters (ESV). Was short by two sentences and a paragraph until then. |
 | Strictly noncommercial | Fine. Free, no ads, no sale. |
 | ≤500 verses per query, or half a book, whichever is less (single-chapter books excepted) | Fine. One chapter per query; the longest is Psalm 119 at 176 verses. Two-chapter books hit exactly half, which is allowed; single-chapter books are exempt by the rule's own wording. |
 | 5,000 queries/day, ≤1,000/hour, ≤60/minute | Fine with headroom. Steady reading costs ~1 request per chapter turn once `prefetchNeighbours` is warm. 5,000/day is the whole Bible four times over. Only sustained fast flicking (>20 turns/min) could approach 60/min. |
-| **May not locally store more than 500 consecutive verses or one-half of any book, whichever is less** | We store **nothing**. See below. |
+| **May not locally store more than 500 verses or one-half of any book, whichever is less** | We store **nothing**. See below. Note: the API terms say plain "500 verses", *not* "consecutive" — see the correction below. |
 | Redistribution ≤500 verses, <50% of a book, <50% of the containing work | Not applicable; Vigil redistributes nothing. |
 | May not display >500 consecutive verses or half a book on any page | Fine. One chapter per page. |
 
@@ -209,9 +209,14 @@ does not actually say that — they permit storing up to 500 consecutive verses
 or half a book, whichever is less. So a limited ESV offline mode would be
 permissible. It is still not built, for three reasons:
 
-1. "500 **consecutive** verses" is ambiguous — a cap on contiguous runs, or a
-   total? The conservative reading is the only safe one, and it is the one
-   that makes the feature least useful.
+1. ~~"500 **consecutive** verses" is ambiguous.~~ **Resolved 2026-08-27.**
+   The word "consecutive" comes from the application form; the API terms
+   page does not use it. It says "You may not locally store more than 500
+   verses or one-half of any book of the Bible (whichever is less)", and the
+   caching FAQ says plainly "You can cache up to 500 verses." So it is a flat
+   total, not a cap on contiguous runs — which is the *stricter* of the two
+   readings, and the one we had already assumed. The ambiguity is gone; the
+   conclusion it supported is unchanged.
 2. Complying properly means per-book accounting and an eviction policy that
    exists nowhere else in the app, sitting alongside the unrestricted
    public-domain path. Two storage policies, one of them legally load-bearing.
@@ -222,6 +227,47 @@ permissible. It is still not built, for three reasons:
 Storing nothing costs almost nothing and removes the whole class of risk.
 **Keep it — but as a considered choice, not a misreading of the terms.**
 
+### The two notices — use the API one
+
+Crossway publishes two different ESV copyright notices, and they are not the
+same text. Checked 2026-08-27:
+
+- **`crossway.org/permissions/`** (general print/digital guidance) adds an
+  `ESV Text Edition: 2025.` line, puts the Creative Commons and no-translation
+  restrictions *before* "Used by permission. All rights reserved.", and says
+  "may not be translated **in whole or in part** into any other language".
+- **`api.esv.org`** (the terms that actually govern a key holder) has no Text
+  Edition line, puts the two restrictions *after* "All rights reserved.", says
+  "may not be translated into any other language", and adds a second required
+  paragraph: "Users may not copy or download more than 500 verses…".
+
+**Vigil carries the api.esv.org wording**, because that is the agreement the
+key is issued under. It is in `ESV_NOTICE`, verified character-for-character
+against the live page. Do not "update" it to the permissions-page version, and
+do not add a Text Edition line — we have no way to confirm which edition the
+API serves, and their own API terms don't ask for one.
+
+Three obligations from that page are load-bearing in the UI, so don't treat
+any of them as decoration:
+
+- **The link to esv.org.** "Each page on which you use the text must include a
+  link to www.esv.org." That is `credit.url`, rendered by the colophon.
+- **The letters "ESV" with the quotation.** Normally satisfied by the API's
+  `include-short-copyright`, which we set to `false` because a trailing
+  "(ESV)" inside the reading column looks like scripture. `parseESV` strips it
+  too. So the letters are carried by `credit.name`, which is
+  "English Standard Version (ESV)" — the parenthetical is doing compliance
+  work, not styling. Don't tidy it away.
+- **The notice itself**, both paragraphs. `credit.note` splits on a blank line
+  and the colophon renders one `<p>` per paragraph.
+
+Also settled on that page, and worth not re-litigating: use in a mobile app or
+other digital medium is explicitly "permitted without formal permission,
+provided all general conditions stated above are met", so Vigil-as-a-PWA needs
+no separate licence. The non-commercial test is "does not charge for access …
+[nor] accepts advertising or sponsorships" — Vigil passes, but that is a
+constraint on the app's future, not just its present.
+
 ### What the key was worth doing
 
 1. ~~Test `fetchESV` / `parseESV` against the live API.~~ **Done 2026-08-26**,
@@ -229,9 +275,8 @@ Storing nothing costs almost nothing and removes the whole class of risk.
    fixtures were kept out of the repo; no ESV text is committed.
 2. ~~Confirm the key is approved.~~ **Done** — John 1, Psalm 23, Psalm 119 and
    Philemon all returned HTTP 200.
-3. **Verify the copyright wording** against Crossway's citation page. Still
-   open. We carry their standard notice and a link to esv.org, but it has not
-   been checked against the page their application form links to.
+3. ~~Verify the copyright wording.~~ **Done 2026-08-27**, and the notice we
+   shipped was wrong — see "The two notices" below. Fixed in `ESV_NOTICE`.
 4. **ESV search via `/v3/passage/search/`.** Still open, and the strongest
    remaining candidate: it is the one place ESV can reach parity, needs no
    storage so it sidesteps the guideline-5 question entirely, and costs one
