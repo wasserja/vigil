@@ -195,7 +195,7 @@ existed to test with. The seven guidelines, and where each lands:
 
 | Guideline | Where Vigil stands |
 |---|---|
-| Copyright citation as outlined by Crossway | **Verified 2026-08-27.** Colophon carries the api.esv.org notice verbatim (both paragraphs) + the required link to esv.org + the letters (ESV). Was short by two sentences and a paragraph until then. |
+| Copyright citation as outlined by Crossway | **Verified 2026-08-27.** Full notice on the Copyright group of the translation sheet; chapter colophon carries the letters (ESV) + the required link to esv.org. See "The two notices". |
 | Strictly noncommercial | Fine. Free, no ads, no sale. |
 | ≤500 verses per query, or half a book, whichever is less (single-chapter books excepted) | Fine. One chapter per query; the longest is Psalm 119 at 176 verses. Two-chapter books hit exactly half, which is allowed; single-chapter books are exempt by the rule's own wording. |
 | 5,000 queries/day, ≤1,000/hour, ≤60/minute | Fine with headroom. Steady reading costs ~1 request per chapter turn once `prefetchNeighbours` is warm. 5,000/day is the whole Bible four times over. Only sustained fast flicking (>20 turns/min) could approach 60/min. |
@@ -258,8 +258,29 @@ any of them as decoration:
   too. So the letters are carried by `credit.name`, which is
   "English Standard Version (ESV)" — the parenthetical is doing compliance
   work, not styling. Don't tidy it away.
-- **The notice itself**, both paragraphs. `credit.note` splits on a blank line
-  and the colophon renders one `<p>` per paragraph.
+- **The notice itself**, both paragraphs — but **once, on a copyright page**,
+  not on every chapter. See below.
+
+#### Per page vs. once per site — don't conflate these
+
+This was got wrong on the first pass, so it is written down. The terms ask for
+two different things in two different places:
+
+- **On every page that shows the text:** "any copyright notice that is sent
+  with the text", the letters "ESV" with the quotation, and a link to
+  www.esv.org. That is all. The chapter colophon does this with
+  `credit.name` = "English Standard Version (ESV)" and `credit.url`.
+- **Once, on a "copyright" page of your website:** the full two-paragraph
+  notice. That is the `Copyright` group at the foot of the translation sheet.
+  `credit.note` is `null` for ESV precisely because the notice does not
+  belong at the end of every chapter.
+
+"You must include the standard ESV copyright notice **on your site**" is the
+site-level obligation; "**Each page** on which you use the text must include a
+link to www.esv.org" is the per-page one. Reading the first as per-page puts
+440 characters of fine print at the end of every chapter, which is compliant
+but wrong for this app — the reading surface is the product. If someone later
+"fixes" the colophon by moving the full notice back into it, this is why not.
 
 Also settled on that page, and worth not re-litigating: use in a mobile app or
 other digital medium is explicitly "permitted without formal permission,

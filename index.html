@@ -682,8 +682,13 @@ const ESV_ENDPOINT = "https://api.esv.org/v3/passage/text/";
    carries a different notice from crossway.org/permissions/ -- no "ESV Text
    Edition" line, and the two restrictions follow "All rights reserved."
    rather than preceding it. The API page governs our use, so it wins.
-   Do not paraphrase, reorder or trim this. The blank line is a paragraph
-   break in the colophon; the second paragraph is part of the required block. */
+   Do not paraphrase, reorder or trim this.
+
+   This belongs on the COPYRIGHT group of the translation sheet, which is our
+   "copyright page" -- not on the chapter colophon. Their terms ask for the
+   full notice once per site; a page showing text needs only the letters
+   "ESV" and a link to esv.org, which the colophon carries. The blank line
+   is a paragraph break. */
 const ESV_NOTICE =
   "Scripture quotations are from the ESV\u00ae Bible (The Holy Bible, English Standard Version\u00ae), \u00a9 2001 by Crossway, a publishing ministry of Good News Publishers. Used by permission. All rights reserved. The ESV text may not be quoted in any publication made available to the public by a Creative Commons license. The ESV may not be translated into any other language."
   + "\n\n"
@@ -798,7 +803,7 @@ async function fetchESV(key, book, chapter){
   if (!raw.trim()) throw new Error("empty");
   return { blocks: parseESV(raw), bookName: byId[book].name, chapters: byId[book].chapters,
            credit: { name:"English Standard Version (ESV)",
-                     note:ESV_NOTICE,
+                     note:null,
                      url:"https://www.esv.org" } };
 }
 
@@ -1671,6 +1676,19 @@ async function drawTranslations(body){
   body.appendChild(Object.assign(el("div","group-title"), { textContent:"Free to read and to keep" }));
   const list = el("div","tlist");
   body.appendChild(list);
+
+  /* Our "copyright page". Crossway's API terms want the full notice once
+     somewhere on the site; this is that somewhere. See ESV_NOTICE. Appended
+     before the translation fetch so it doesn't pop in late. */
+  body.appendChild(Object.assign(el("div","group-title"), { textContent:"Copyright" }));
+  const cr = el("div","note");
+  ESV_NOTICE.split(/\n{2,}/).forEach((para, i) => {
+    const n = el("p", null, para);
+    n.style.marginTop = i ? ".9em" : "0";
+    n.style.marginBottom = "0";
+    cr.appendChild(n);
+  });
+  body.appendChild(cr);
 
   if (!translations){
     const load = el("div","state"); load.appendChild(el("div","spin"));
