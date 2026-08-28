@@ -499,6 +499,12 @@ input:focus{outline:none;border-color:var(--gilt-dim)}
   box-shadow:0 0 0 6px var(--wash-soft)}
 /* The verse being spoken, held until the voice moves on. clone keeps the
    background sane when the verse wraps across lines. */
+/* The word being spoken, when the engine reports boundaries. Painted by
+   the Custom Highlight API, so no element is created or moved. */
+::highlight(vigil-word){
+  background:var(--wash);
+  color:var(--ink-hi, var(--ink));
+}
 .vt.speaking{background:var(--wash-soft);border-radius:4px;
   box-shadow:0 0 0 3px var(--wash-soft);
   box-decoration-break:clone;-webkit-box-decoration-break:clone}
@@ -1628,20 +1634,89 @@ function markSpeaking(v){
     window.scrollTo({ top: Math.max(0, r.top + window.scrollY - innerHeight / 3), behavior:"smooth" });
 }
 
+/* Walk the rendered verse and record where each text node begins, so a
+   character offset from a boundary event can be turned back into a DOM
+   position. Speaking THIS string rather than the queue's copy is what keeps
+   the two in step — the queue text is normalised, the DOM text is not. */
+function verseTextMap(v){
+  const parts = document.querySelectorAll(`#page .vt[data-vt="${v}"]`);
+  if (!parts.length) return null;
+  const nodes = [];
+  let text = "";
+  for (const part of parts){
+    /* A verse of poetry is several .vt elements in several paragraphs, and
+       there is no whitespace text node between two <p>s — concatenating
+       them raw gives "shepherd;I shall not want", which the engine then
+       says that way too. The separator is added to the string only; the
+       next node's recorded start already accounts for it, and a word never
+       begins on it, so the offset mapping stays exact. */
+    if (text && !/\s$/.test(text)) text += " ";
+    const walk = document.createTreeWalker(part, NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = walk.nextNode())){
+      nodes.push({ node: n, start: text.length });
+      text += n.nodeValue;
+    }
+  }
+  return nodes.length ? { text, nodes } : null;
+}
+
+const wordHL = (typeof Highlight !== "undefined" && typeof CSS !== "undefined" && CSS.highlights)
+  ? new Highlight() : null;
+if (wordHL) CSS.highlights.set("vigil-word", wordHL);
+
+function clearWord(){ if (wordHL) wordHL.clear(); }
+
+/* Highlight one word by Range. No DOM mutation: wrapping words in spans
+   mid-utterance would invalidate the offsets the boundary events are
+   still counting against. */
+function markWord(map, from){
+  if (!wordHL || !map) return;
+  const m = /^\s*(\S+)/.exec(map.text.slice(from));
+  if (!m) { wordHL.clear(); return; }
+  const a = from + m[0].length - m[1].length;
+  const b = a + m[1].length;
+  const at = (off) => {
+    for (let i = map.nodes.length - 1; i >= 0; i--){
+      const n = map.nodes[i];
+      if (off >= n.start) return [n.node, Math.min(off - n.start, n.node.nodeValue.length)];
+    }
+    return [map.nodes[0].node, 0];
+  };
+  try {
+    const r = document.createRange();
+    r.setStart(...at(a));
+    r.setEnd(...at(b));
+    wordHL.clear();
+    wordHL.add(r);
+  } catch (_){ wordHL.clear(); }
+}
+
 function speakNext(){
   if (!Speech.on) return;
   if (Speech.i >= Speech.queue.length) return speakAdvance();
   const item = Speech.queue[Speech.i];
-  const u = new SpeechSynthesisUtterance(item.t);
+  /* Speak the rendered text when we can see it, so boundary offsets line
+     up with the DOM; fall back to the queue's copy otherwise. */
+  const map = verseTextMap(item.v);
+  const u = new SpeechSynthesisUtterance(map ? map.text : item.t);
   u.rate = S.rate;
   const v = pickVoice(); if (v){ u.voice = v; u.lang = v.lang; }
-  u.onend = () => { if (Speech.on){ Speech.i++; speakNext(); } };
+  /* Not every engine fires these — iOS Safari historically does not, and
+     network voices often skip them — so word following is a bonus on top of
+     the verse highlight, never the only feedback. */
+  u.onboundary = (e) => {
+    if (!Speech.on || e.name === "sentence") return;
+    markWord(map, e.charIndex || 0);
+  };
+  u.onend = () => { clearWord(); if (Speech.on){ Speech.i++; speakNext(); } };
   u.onerror = (e) => {
     /* cancel() raises these; they are not failures. */
     if (!Speech.on || e.error === "interrupted" || e.error === "canceled") return;
     speakStop(); toast("The voice stopped unexpectedly");
   };
   markSpeaking(item.v);
+  clearWord();
   speechSynthesis.speak(u);
 }
 
@@ -1685,6 +1760,7 @@ function speakStart(){
 
 function speakStop(){
   Speech.on = false; Speech.seq++; Speech.expect = null;
+  clearWord();
   try { speechSynthesis.cancel(); } catch (_){}
   for (const e of document.querySelectorAll("#page .speaking")) e.classList.remove("speaking");
   if (Speech.held){ Speech.held = false; if (!S.awake) releaseWake(); }

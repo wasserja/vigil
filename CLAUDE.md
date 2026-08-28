@@ -690,6 +690,32 @@ case that has to work.
   sequence, not just the success path.** The first version only guarded the
   success path, so a stale advance's failure called `speakStop()` and
   silently killed the session the user had just started.
+- **Word following.** `SpeechSynthesisUtterance` fires `boundary` events
+  with a character offset, so the word being spoken is highlighted inside
+  the verse highlight, the way Edge's own Read Aloud does. Three things
+  make it work:
+
+  - **The utterance text is taken from the DOM, not the queue.** The
+    queue's copy is whitespace-normalised and the DOM's is not, so offsets
+    would drift. `verseTextMap()` walks the verse's text nodes, records
+    where each begins, and speaks exactly that string. Verified equal to
+    the queue text for plain, poetic and words-of-Jesus verses.
+  - **A verse of poetry is several elements in several paragraphs**, and
+    there is no whitespace node between two `<p>`s. Concatenating raw gave
+    `"shepherd;I shall not want"` — which the engine then *said* that way,
+    so this was an audio bug as much as a highlighting one. A separator is
+    added to the string only; the next node's recorded start accounts for
+    it and a word never begins on it, so offsets stay exact.
+  - **No DOM mutation.** The highlight is a `Range` painted through the CSS
+    Custom Highlight API. Wrapping words in spans mid-utterance would
+    invalidate the very offsets the boundary events are still counting
+    against.
+
+  **Not every engine fires `boundary`** — iOS Safari historically does not,
+  and network voices often skip it — so word following is a bonus layered
+  on the verse highlight, never the only feedback. If it is silent on a
+  device, that is the engine, not a bug to chase.
+
 - `open()` stops the reading whenever the chapter changes to something
   `speakAdvance` did not ask for, which covers the picker, search results,
   swipes and the prev/next buttons in one place.
