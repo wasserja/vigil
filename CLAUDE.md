@@ -466,6 +466,47 @@ period followed by a normal space and one followed by U+00A0 produce
 byte-identical audio, so the nbsp between verses is safe. The middle dot
 was the only offender, and it is gone from the text layer as of v11.
 
+## Wanted: NIV, NASB, The Message — via API.Bible
+
+Scouted 2026-08-27. These are commercially licensed and are **not** on
+HelloAO, which carries 51 English translations, all public domain or
+freely licensed, and none of these. There is no back door: the route is a
+licence.
+
+**API.Bible (American Bible Society) is that route.** It carries NIV,
+NASB, The Message, NLT, NKJV, CSB, Amplified and GNT under one agreement,
+via publisher partnerships with Biblica, Lockman, HarperCollins, Tyndale
+and others. Plans, read off their pricing page:
+
+- **Starter — $0.** Creative Commons and public-domain Bibles, plus (per
+  their docs) a choice of **up to 3 licensed Bibles for non-commercial
+  use**. **5,000 API calls per MONTH**, no overage protection.
+- **Pro — $29+/month** for copyrighted Bibles generally; individual
+  commercial licences from $10/month per translation.
+- "Strictly non-commercial use. No ads, fees, freemium models or upsells."
+  Vigil qualifies today and would have to keep qualifying.
+- Note in their own footnote: *NIV commercial use is not available.*
+
+**The call budget is the thing to design around, and it is tight.**
+Crossway gives 5,000 a *day*; API.Bible's free tier gives 5,000 a *month*
+— about 165 chapter loads a day, and `prefetchNeighbours` spends 2-3 calls
+per turn. Copyrighted text also cannot be stored, so there is no offline
+path to take the pressure off: every read is a call. Prefetch may need to
+be off for these translations.
+
+**Before writing any code:** register for Starter, confirm those three are
+actually among the selectable licensed Bibles, and read their caching and
+attribution rules. Neither was verifiable from the public pages, and both
+shape the adapter — the ESV taught us that the terms are where the real
+design constraints live, not the docs.
+
+Architecturally this is the **third source adapter**, which the block
+contract already anticipates: emit `{blocks, bookName, chapters, credit}`
+and change no rendering path. One adapter would unlock the whole catalogue
+at once, so the work is per-source, not per-translation. Offline download
+must be disabled for licensed texts, exactly as it is for the ESV, and
+each publisher will have its own required notice for `credit.note`.
+
 ## Someday: Hebrew and Greek, and searching the originals
 
 Wanted, and explicitly ranked BELOW read-aloud. Scouted 2026-08-27 so the
