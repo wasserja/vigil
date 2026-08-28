@@ -421,6 +421,45 @@ Two things worth keeping from it:
 The full measurements are in git history (see the commit that closed this) if
 a similar gap ever turns up.
 
+## The build number is in the app, and why
+
+Settings → About shows the version the **service worker** is actually
+serving, and an "Update now" button that calls `registration.update()` and
+reloads into the new build.
+
+This exists because a stale shell is indistinguishable from a real bug.
+The worker `skipWaiting()`s and claims on install, so a new build goes live
+immediately — but the page already on screen keeps the old HTML until it is
+relaunched. Twice during the read-aloud work, a fix that was already
+deployed and verified was reported as still broken, and the answer both
+times was "you are looking at the previous build". The version is queried
+over a `MessageChannel` rather than a plain `postMessage`, because on a
+first load the page is not yet a controlled client and the worker's reply
+would have nowhere to go.
+
+**Ask for the build number before debugging any report of "the fix didn't
+work".**
+
+### What actually gets spoken as "dot"
+
+Measured 2026-08-27 with macOS `say -o` and `afinfo`, which shares its
+voices with iOS, by comparing utterance durations:
+
+| text | duration |
+|---|---|
+| `Genesis 1 · BSB` | 1.886s |
+| `Genesis 1 BSB` | 1.515s |
+| `berean.bible` | 0.817s |
+| `berean bible` | 0.887s |
+| `◆` | 0.012s |
+
+So **`·` U+00B7 costs 0.37s — an extra spoken word, "dot"** — while a
+period inside `berean.bible` is *shorter* than a space (read as a domain,
+not "dot"), and `◆` is silent. A trailing period is never vocalised: a
+period followed by a normal space and one followed by U+00A0 produce
+byte-identical audio, so the nbsp between verses is safe. The middle dot
+was the only offender, and it is gone from the text layer as of v11.
+
 ## Read aloud (built 2026-08-27)
 
 Vigil speaks for itself rather than relying on the browser to do it. The

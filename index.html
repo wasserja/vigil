@@ -1685,6 +1685,25 @@ function updateProgress(){
    9 · Sheets
    ══════════════════════════════════════════════════════════════ */
 let sheetView = null;
+/* Which build the offline shell is actually serving — see the About row. */
+let swVersion = null;
+function askWorkerVersion(){
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.ready.then(reg => {
+    const w = navigator.serviceWorker.controller || reg.active;
+    if (!w) return;
+    /* A MessageChannel, not a bare postMessage: until the worker claims
+       this page there is no controller, and the worker's reply would have
+       nowhere to go. */
+    const ch = new MessageChannel();
+    ch.port1.onmessage = e => {
+      if (!e.data || !e.data.vigilVersion) return;
+      swVersion = e.data.vigilVersion;
+      if (sheetView === "settings") drawSheet();
+    };
+    w.postMessage("version", [ch.port2]);
+  }).catch(() => {});
+}
 let pickedBook = null;
 
 /* Freezing has to preserve the offset by hand: position:fixed on the body
@@ -1886,6 +1905,33 @@ function drawSettings(body){
       row("Voice", null, sel);
     }
   }
+
+  group("About");
+  const ab = el("div","row");
+  ab.append(Object.assign(el("div","lbl", swVersion ? `Build ${swVersion}` : "Build unknown"), {}));
+  ab.querySelector(".lbl").appendChild(Object.assign(document.createElement("em"), {
+    textContent: !("serviceWorker" in navigator) || !window.isSecureContext
+      ? "Not installed here — the offline shell needs https or localhost."
+      : (swVersion ? "Vigil updates on the next launch after a release. Update now to skip the wait."
+                   : "Waiting for the offline shell to answer.")
+  }));
+  const up = el("button","pillbtn","Update now");
+  up.disabled = !("serviceWorker" in navigator) || !window.isSecureContext;
+  up.onclick = async () => {
+    up.disabled = true; up.textContent = "Checking\u2026";
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (!reg){ toast("Nothing installed here"); up.disabled = false; up.textContent = "Update now"; return; }
+      await reg.update();
+      /* The worker skipWaiting()s and claims on install, so a new build is
+         already live by now — but THIS page still holds the old HTML, which
+         is the whole reason the button exists. Reload into it. */
+      setTimeout(() => location.reload(), 900);
+    } catch (_){
+      toast("Couldn't reach the update"); up.disabled = false; up.textContent = "Update now";
+    }
+  };
+  add(ab); ab.appendChild(up);
 
   group("Translation");
   const tr = el("div","row");
@@ -2386,6 +2432,10 @@ if ("serviceWorker" in navigator && window.isSecureContext) {
        from: / locally, /vigil/ on Pages. */
     navigator.serviceWorker.register("sw.js").catch(() => {});
   });
+  /* Re-ask when a new worker takes over, so the About row cannot go stale
+     while the sheet is open. */
+  navigator.serviceWorker.addEventListener("controllerchange", askWorkerVersion);
+  askWorkerVersion();
 }
 </script>
 </body>

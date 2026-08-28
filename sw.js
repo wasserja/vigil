@@ -22,7 +22,7 @@
    served stale-while-revalidate, so a new index.html lands on the second
    launch even without a bump — but bumping makes it the FIRST launch and
    drops the previous cache. */
-const VERSION = "vigil-v12";
+const VERSION = "vigil-v13";
 
 /* Relative so one worker serves both / (local) and /vigil/ (Pages). */
 const SHELL = [
@@ -53,6 +53,19 @@ self.addEventListener("activate", e => {
       .then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
+});
+
+/* The page asks which build is actually live. "Am I on the new one?" was
+   costing a round of guesswork every release — a stale shell looks exactly
+   like a real bug, and it already sent two read-aloud reports the wrong way. */
+self.addEventListener("message", e => {
+  if (e.data !== "version") return;
+  const reply = { vigilVersion: VERSION };
+  /* Reply down the port when one is supplied: on a first load the page is
+     not yet a controlled client, so e.source can be null and a plain
+     postMessage would go nowhere. */
+  if (e.ports && e.ports[0]) e.ports[0].postMessage(reply);
+  else if (e.source) e.source.postMessage(reply);
 });
 
 self.addEventListener("fetch", e => {
