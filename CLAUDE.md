@@ -421,6 +421,53 @@ Two things worth keeping from it:
 The full measurements are in git history (see the commit that closed this) if
 a similar gap ever turns up.
 
+## Read aloud (built 2026-08-27)
+
+Vigil speaks for itself rather than relying on the browser to do it. The
+reason is not preference: iOS Safari has no read-aloud at all, every iOS
+browser is forced onto WebKit so Edge's desktop Read Aloud is a different
+implementation there — and it never managed this page — and Chrome/Edge on
+Android worked but read whatever happened to be in the text layer. The
+installed app on a phone is where Vigil is actually read, so that is the
+case that has to work.
+
+`Listen` in the bottom bar. `speechSynthesis`, one utterance per verse.
+
+- **The queue comes from the chapter DATA, never the DOM.** `verseQueue()`
+  runs `flattenChapter`, the same function the search corpus uses, so
+  headings, numerals and the colophon are absent *by construction* rather
+  than by suppression. This is why the read-aloud gotchas above and this
+  feature do not have to agree about anything.
+- **One utterance per verse, not per chapter.** Long utterances get
+  truncated or silently dropped by several engines, and per-verse
+  granularity is what makes highlighting possible at all.
+- **`.vt` wraps each verse's TEXT** — not the numeral, not the drop cap.
+  In paragraph layout a `.pg` holds many verses, so highlighting the
+  paragraph would light up most of the screen. Leaving `.vn` and `.cap` as
+  direct children keeps `.pg > .vn:first-child` and the cap's float
+  working; a bare inline span is layout-neutral, verified box-for-box
+  against the previous build. A verse of poetry spans several blocks, so
+  `curV` persists across them and every `.vt[data-vt=N]` lights together.
+- **It rolls into the next chapter** so listening does not stop every few
+  minutes. `speakAdvance()` awaits `open()`, which means a Stop — or a
+  fresh Listen — can land mid-flight. **Every exit from it checks the
+  sequence, not just the success path.** The first version only guarded the
+  success path, so a stale advance's failure called `speakStop()` and
+  silently killed the session the user had just started.
+- `open()` stops the reading whenever the chapter changes to something
+  `speakAdvance` did not ask for, which covers the picker, search results,
+  swipes and the prev/next buttons in one place.
+- A wake lock is held while speaking, and released only if the reading took
+  it — the user's own "keep the screen awake" setting is left alone.
+- Returning from the background resumes: iOS kills the utterance while
+  `Speech.on` stays true, which would otherwise leave "Stop" over silence.
+- Voices load asynchronously in both Safari and Chrome, hence
+  `voiceschanged`. A local voice is preferred over a network one, and a
+  stored `voiceURI` that no longer exists falls back rather than failing.
+- iOS requires the first `speak()` to happen inside a user gesture. The
+  Listen button is that gesture, so nothing special is needed — but any
+  future attempt to start speech automatically will be silently dropped.
+
 ## Gotchas already hit
 
 - `closeSheet()` resets `pickedBook` to `null`. A handler written as

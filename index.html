@@ -488,6 +488,18 @@ input:focus{outline:none;border-color:var(--gilt-dim)}
 .pg{transition:background 900ms ease,box-shadow 900ms ease}
 .pg.landed{background:var(--wash-soft);border-radius:5px;
   box-shadow:0 0 0 6px var(--wash-soft)}
+/* The verse being spoken, held until the voice moves on. clone keeps the
+   background sane when the verse wraps across lines. */
+.vt.speaking{background:var(--wash-soft);border-radius:4px;
+  box-shadow:0 0 0 3px var(--wash-soft);
+  box-decoration-break:clone;-webkit-box-decoration-break:clone}
+#btn-speak[aria-pressed="true"]{color:var(--gilt)}
+.vselect{
+  appearance:none;-webkit-appearance:none;
+  background:var(--surface);border:1px solid var(--line);border-radius:9px;
+  color:var(--ink);font:inherit;font-size:16px;   /* 16px: see the input note */
+  padding:7px 10px;max-width:58%;
+}
 .results{display:flex;flex-direction:column}
 .results button{
   appearance:none;background:none;border:0;cursor:pointer;
@@ -588,6 +600,8 @@ input:focus{outline:none;border-color:var(--gilt-dim)}
 
   <footer id="botbar" class="chrome">
     <button class="btn" id="btn-prev">‹ <span></span></button>
+    <span class="grow"></span>
+    <button class="btn" id="btn-speak" aria-pressed="false">Listen</button>
     <span class="grow"></span>
     <button class="btn" id="btn-next"><span></span> ›</button>
   </footer>
@@ -968,7 +982,8 @@ const S = {
   lum: 68, warm: 9,
   fs: 19, lh: 1.68, measure: 34,
   face: "book", verses: "on", layout: "para", woc: "off",
-  awake: false, autohide: true
+  awake: false, autohide: true,
+  rate: 0.95, voice: ""
 };
 
 const chapterCache = new Map();          // "TID/BOOK/CH" -> normalised chapter
@@ -1093,6 +1108,9 @@ function renderChapter(ch){
 
   const blocks = S.layout === "verse" ? toVerseLines(ch.blocks) : ch.blocks;
   let capUsed = false;
+  /* Carried across blocks: a verse of poetry spans several of them, and the
+     continuation lines have no marker of their own. */
+  let curV = null;
 
   blocks.forEach((blk, i) => {
     /* Headings and Hebrew subtitles are editorial, not scripture, and are
@@ -1118,6 +1136,7 @@ function renderChapter(ch){
 
     for (const run of blk.runs){
       if (run.v != null){
+        curV = run.v;
         if (first && !capUsed && S.layout !== "verse"){
           const cap = el("span","cap");
           cap.dataset.v = String(run.v);        // the numeral stands in for verse 1's number
@@ -1152,7 +1171,19 @@ function renderChapter(ch){
         const needsSpace = !afterMark && tail && !/[\s\u201c(]$/.test(tail) && !/^[\s.,;:!?)\u201d\u2019]/.test(run.t);
         const t = el("span", run.woc ? "woc" : null);
         t.textContent = (needsSpace ? " " : "") + run.t;
-        p.appendChild(t);
+        /* Wrap the TEXT of each verse — not the numeral, not the drop cap —
+           so read-aloud can highlight exactly the verse being spoken. In
+           paragraph layout a .pg holds many verses, so highlighting the
+           paragraph would light up most of the screen. Leaving .vn and .cap
+           as direct children keeps `.pg > .vn:first-child` and the cap's
+           float working untouched; a bare inline span costs no layout. */
+        if (curV != null){
+          let vt = p.lastElementChild;
+          if (!vt || !vt.classList.contains("vt") || vt.dataset.vt !== String(curV)){
+            vt = el("span","vt"); vt.dataset.vt = String(curV); p.appendChild(vt);
+          }
+          vt.appendChild(t);
+        } else p.appendChild(t);
         tail = run.t;
         afterMark = false;
       }
@@ -1246,6 +1277,10 @@ async function getChapter(book, chapter){
 
 let loadToken = 0;
 async function open(book, chapter, { animate = true, verse = null } = {}){
+  /* A chapter change we did not initiate means the listener moved: the
+     queue is about to be stale, so stop rather than read the wrong text.
+     speakAdvance sets Speech.expect so its own move survives this. */
+  if (Speech.on && Speech.expect !== `${book}/${chapter}`) speakStop();
   if (!byId[book]) { book = "JHN"; chapter = 1; }   // never let a bad id reach state
   const mine = ++loadToken;
   S.book = book; S.chapter = chapter;
@@ -1482,6 +1517,130 @@ async function searchESV(key, q, page){
 }
 
 /* ══════════════════════════════════════════════════════════════
+   7c · Read aloud
+   ══════════════════════════════════════════════════════════════
+   Browsers' own read-aloud features are not an option here. iOS Safari
+   has none at all, and every iOS browser is forced onto WebKit, so
+   Edge's desktop Read Aloud is a different implementation there that
+   never managed this page. Since the installed app on a phone is where
+   Vigil is actually read, the app speaks for itself.
+
+   Speaking our own text also means we choose what is said: the queue is
+   built from the chapter DATA, not the DOM, so headings, verse numerals
+   and the colophon are absent by construction rather than by suppression.
+   flattenChapter already yields exactly the verse text.
+
+   One utterance per verse, not one per chapter. Long utterances get
+   truncated or dropped by several engines, and per-verse granularity is
+   what lets the current verse be highlighted and followed.            */
+
+const Speech = { on:false, queue:[], i:0, held:false, seq:0, expect:null };
+const speechOK = () => typeof speechSynthesis !== "undefined" && typeof SpeechSynthesisUtterance !== "undefined";
+
+let voicesCache = [];
+function loadVoices(){ try { voicesCache = speechSynthesis.getVoices() || []; } catch (_){ voicesCache = []; } }
+function englishVoices(){ return voicesCache.filter(v => /^en\b|^en[-_]/i.test(v.lang)); }
+function pickVoice(){
+  if (!voicesCache.length) loadVoices();
+  const en = englishVoices();
+  if (S.voice){ const hit = voicesCache.find(v => v.voiceURI === S.voice); if (hit) return hit; }
+  /* a local voice avoids a network round trip mid-sentence */
+  return en.find(v => v.localService) || en[0] || null;
+}
+
+function verseQueue(){
+  const ch = chapterCache.get(`${S.translation}/${S.book}/${S.chapter}`);
+  if (!ch) return [];
+  const out = [];
+  flattenChapter(ch, S.book, S.chapter, out);   // verse text only: no headings, no numerals
+  return out;
+}
+
+function markSpeaking(v){
+  for (const e of document.querySelectorAll("#page .speaking")) e.classList.remove("speaking");
+  const parts = document.querySelectorAll(`#page .vt[data-vt="${v}"]`);
+  if (!parts.length) return;
+  for (const e of parts) e.classList.add("speaking");
+  /* Follow the reading, but only once it has left a comfortable band —
+     re-centring on every verse makes the page twitch. */
+  const r = parts[0].getBoundingClientRect();
+  if (r.top < innerHeight * 0.16 || r.bottom > innerHeight * 0.74)
+    window.scrollTo({ top: Math.max(0, r.top + window.scrollY - innerHeight / 3), behavior:"smooth" });
+}
+
+function speakNext(){
+  if (!Speech.on) return;
+  if (Speech.i >= Speech.queue.length) return speakAdvance();
+  const item = Speech.queue[Speech.i];
+  const u = new SpeechSynthesisUtterance(item.t);
+  u.rate = S.rate;
+  const v = pickVoice(); if (v){ u.voice = v; u.lang = v.lang; }
+  u.onend = () => { if (Speech.on){ Speech.i++; speakNext(); } };
+  u.onerror = (e) => {
+    /* cancel() raises these; they are not failures. */
+    if (!Speech.on || e.error === "interrupted" || e.error === "canceled") return;
+    speakStop(); toast("The voice stopped unexpectedly");
+  };
+  markSpeaking(item.v);
+  speechSynthesis.speak(u);
+}
+
+/* Roll into the next chapter, so listening does not stop every few minutes. */
+async function speakAdvance(){
+  /* Claim the sequence FIRST. open() is awaited, so a Stop — or a fresh
+     Listen — can land while this is in flight; every exit below has to
+     check, not just the success path. Without that, a stale advance's
+     failure calls speakStop() and silently kills the session the user
+     just started. */
+  const mine = ++Speech.seq;
+  const stale = () => mine !== Speech.seq;
+
+  const n = step(S.book, S.chapter, 1);
+  if (!n){ if (!stale()) speakStop(); return; }   // end of the canon
+  Speech.expect = `${n.book}/${n.chapter}`;       // tells open() this move was ours
+
+  let ok = true;
+  try { await open(n.book, n.chapter); } catch (_){ ok = false; }
+  if (stale()) return;
+  Speech.expect = null;
+  if (!ok){ speakStop(); toast("Couldn't load the next chapter"); return; }
+  if (!Speech.on) return;
+
+  Speech.queue = verseQueue();
+  Speech.i = 0;
+  if (!Speech.queue.length){ speakStop(); return; }
+  speakNext();
+}
+
+function speakStart(){
+  if (!speechOK()) return toast("This browser can't read aloud");
+  const q = verseQueue();
+  if (!q.length) return toast("Nothing to read here yet");
+  Speech.on = true; Speech.queue = q; Speech.i = 0; Speech.seq++;
+  if (!S.awake){ Speech.held = true; requestWake(); }
+  try { speechSynthesis.cancel(); } catch (_){}
+  speakNext();
+  syncSpeakBtn();
+}
+
+function speakStop(){
+  Speech.on = false; Speech.seq++; Speech.expect = null;
+  try { speechSynthesis.cancel(); } catch (_){}
+  for (const e of document.querySelectorAll("#page .speaking")) e.classList.remove("speaking");
+  if (Speech.held){ Speech.held = false; if (!S.awake) releaseWake(); }
+  syncSpeakBtn();
+}
+
+function speakToggle(){ Speech.on ? speakStop() : speakStart(); }
+
+function syncSpeakBtn(){
+  const b = $("#btn-speak");
+  if (!b) return;
+  b.textContent = Speech.on ? "Stop" : "Listen";
+  b.setAttribute("aria-pressed", String(Speech.on));
+}
+
+/* ══════════════════════════════════════════════════════════════
    8 · Chrome + immersion
    ══════════════════════════════════════════════════════════════ */
 let hideTimer = null;
@@ -1707,6 +1866,26 @@ function drawSettings(body){
       toggle(S.autohide, v => { S.autohide = v; v ? showChrome() : (clearTimeout(hideTimer), document.body.classList.remove("immersive")); }));
   row("Keep the screen awake", "Stops the display dimming mid-chapter.",
       toggle(S.awake, v => { S.awake = v; v ? requestWake() : releaseWake(); }));
+
+  if (speechOK()){
+    group("Read aloud");
+    row("Speed", "Scripture wants a slower voice than a web page.",
+        slider(0.6, 1.3, 0.05, S.rate, v => S.rate = v));
+    const voices = englishVoices();
+    if (voices.length){
+      const sel = document.createElement("select");
+      sel.className = "vselect";
+      for (const v of voices){
+        const o = document.createElement("option");
+        o.value = v.voiceURI; o.textContent = v.name;
+        if (v.voiceURI === S.voice) o.selected = true;
+        sel.appendChild(o);
+      }
+      if (!S.voice){ const cur = pickVoice(); if (cur) sel.value = cur.voiceURI; }
+      sel.onchange = () => { S.voice = sel.value; save(); };
+      row("Voice", null, sel);
+    }
+  }
 
   group("Translation");
   const tr = el("div","row");
@@ -2038,8 +2217,21 @@ async function requestWake(){
 }
 function releaseWake(){ if (wakeLock){ wakeLock.release().catch(()=>{}); wakeLock = null; } }
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && S.awake && !wakeLock) requestWake();
+  if (document.visibilityState !== "visible") return;
+  if (S.awake && !wakeLock) requestWake();
+  /* Backgrounding kills the utterance on iOS while Speech.on stays true,
+     which would leave the button reading "Stop" over silence. Pick the
+     verse back up instead. */
+  if (Speech.on && !speechSynthesis.speaking && !speechSynthesis.pending) speakNext();
 });
+
+if (speechOK()){
+  loadVoices();
+  /* Both Safari and Chrome populate the voice list asynchronously, so
+     without this the first Listen gets whatever the default happens to be
+     rather than the chosen voice. */
+  speechSynthesis.addEventListener("voiceschanged", loadVoices);
+}
 
 function redrawKeepScroll(){
   const span = () => document.documentElement.scrollHeight - window.innerHeight;
@@ -2062,7 +2254,8 @@ function save(){
       translation:S.translation, translationName:S.translationName, esvKey:S.esvKey,
       theme:S.theme, bookOrder:S.bookOrder, lum:S.lum, warm:S.warm, fs:S.fs, lh:S.lh, measure:S.measure,
       face:S.face, verses:S.verses, layout:S.layout, woc:S.woc,
-      awake:S.awake, autohide:S.autohide
+      awake:S.awake, autohide:S.autohide,
+      rate:S.rate, voice:S.voice
     });
     Store.set("position", { book:S.book, chapter:S.chapter });
   }, 250);
@@ -2122,6 +2315,7 @@ $("#btn-passage").onclick = () => openSheet("passage");
 $("#btn-trans").onclick   = () => openSheet("translations");
 $("#btn-settings").onclick= () => openSheet("settings");
 $("#btn-search").onclick  = () => openSheet("search");
+$("#btn-speak").onclick   = () => { showChrome(); speakToggle(); };
 $("#btn-prev").onclick    = () => go(-1);
 $("#btn-next").onclick    = () => go(1);
 $("#sheet-close").onclick = closeSheet;

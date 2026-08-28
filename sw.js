@@ -22,7 +22,7 @@
    served stale-while-revalidate, so a new index.html lands on the second
    launch even without a bump — but bumping makes it the FIRST launch and
    drops the previous cache. */
-const VERSION = "vigil-v11";
+const VERSION = "vigil-v12";
 
 /* Relative so one worker serves both / (local) and /vigil/ (Pages). */
 const SHELL = [
