@@ -393,52 +393,33 @@ into a transcript, a commit, or this file. For local testing there is a copy
 at `~/.esv_api_key` (mode 600, outside the repo and outside the homelab
 backup allowlist); read it into a request, never echo it.
 
-## The bottom gap (2026-08-26; likely resolved 2026-08-27, NEEDS A DEVICE CHECK)
+## The bottom gap — RESOLVED 2026-08-27
 
-**Status.** The scroll inversion above removed the mechanism this bug lived
-in: there is no longer a mask on an `overflow:auto` box, because there is no
-longer an inner scroller at all. The bottom fade is a fixed overlay pinned to
-the viewport, which was candidate 3 on the list below and was already judged
-"visually identical". So this is *probably* fixed as a side effect.
+For a day this was the app's worst open bug: on an installed iOS app the
+reading column stopped ~61pt short at the bottom while the top ran clean to
+the screen edge. Half an inch of dead page. It was measured carefully off
+device screenshots, `height:100dvh` on `#app` was tried and did nothing, and
+three candidate fixes were queued.
 
-**It has not been confirmed on hardware, and it must not be recorded as fixed
-until it is.** The measurements below stay because they were expensive to take
-and because a device check might still show the gap — in which case the
-correlation with the top safe-area inset, still unexplained, is the next
-thread to pull.
+**It was fixed as a side effect of making the document the scroller.** The
+bottom fade is now a `position:fixed` overlay pinned to the viewport instead
+of a `-webkit-mask-image` on an `overflow:auto` box — which was candidate 3 on
+that list. Confirmed on device: gone in iOS Safari, gone in the installed iOS
+app, and good on Android.
 
-The original report and workings follow.
+Two things worth keeping from it:
 
-On an installed iOS app the reading column stops short at the bottom while
-the top runs clean to the screen edge. Roughly half an inch of dead page.
-**Not fixed.** `height:100dvh` on `#app` was tried and made no visible
-difference. Do not re-try that.
+- **The mechanism was the mask on the scroll container**, near enough. A
+  `-webkit-mask-image` on an `overflow:auto` element is geometry WebKit gets
+  wrong, and it only misbehaved on one edge. If a mask ever goes back onto a
+  scrolling box, expect this again.
+- **The 61pt ≈ top safe-area inset correlation was a red herring.** It looked
+  like the shell was resolving to screen-minus-top-inset, which is what sent
+  the first attempt at `dvh`. It was never the cause. A tight numeric
+  coincidence is not a mechanism, and this one cost a day.
 
-The measurements, so nobody has to take them again. From device screenshots,
-iPhone 16 Pro Max, 440x956pt at 3x, both themes identical:
-
-- The top fade is a correct 0 -> 54pt ramp anchored to the screen edge.
-- The bottom fade is the same 54pt ramp **displaced ~61pt upward**. Solving
-  for the ramp's zero point from three rows of the dark screenshot gives
-  61.8 / 60.6 / 60.5pt — tightly determined, not line-position noise.
-- ~61pt is suspiciously close to that device's **top** safe-area inset
-  (Dynamic Island, ~59-62pt), which is what suggested the shell's height was
-  resolving to screen-minus-top-inset. The dvh fix did not bear that out, so
-  treat the correlation as unexplained rather than as the mechanism.
-- Ruled out: theme (identical in both), the 46vh chapter-end padding (this
-  is mid-chapter), and line-position variation (measured across 8 scroll
-  offsets: mean 34.1px above vs 30.1px below, i.e. symmetric).
-- `#reader` clips at its own box, so no change to the mask gradient can put
-  text in that band. The element is short; the gradient is fine.
-
-Next candidates, in the order worth trying:
-
-1. Move the mask off the scroll container onto a wrapper element. A
-   `-webkit-mask-image` on an `overflow:auto` box is exactly the sort of
-   geometry WebKit gets wrong, and it would explain why only one edge misbehaves.
-2. `-webkit-fill-available` in place of `dvh`.
-3. Abandon the bottom mask entirely: a gradient overlay pinned to `bottom:0`
-   is visually identical and does not depend on the scroller's box at all.
+The full measurements are in git history (see the commit that closed this) if
+a similar gap ever turns up.
 
 ## Gotchas already hit
 
