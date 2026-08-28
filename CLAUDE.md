@@ -205,8 +205,14 @@ Two more things the live API taught us, neither guessable from the docs:
    ANDed, results cap at 300. A hit opens the chapter and lands on the verse.
 4. ~~**ESV**.~~ **Done 2026-08-27.** Parser tested and fixed; search built on
    `/v3/passage/search/`; copyright verified. See the ESV section below.
-5. **Larger screens: worth it, or not?** Open question, deliberately phrased
-   as a question. The brief is an iPhone in the dark, and a reader that is
+5. **Larger screens: worth it, or not?** **POSTPONED 2026-08-27**, and
+   deliberately. The priority is reading on Android and iPhone, and
+   read-aloud. Do not pick this up ahead of those. The notes below are kept
+   because the analysis is still good whenever it does come back — and note
+   that it now also has to absorb desktop full-screen, since a desktop
+   browser will not surrender its chrome to scrolling.
+
+   Originally phrased as a question, and still one. The brief is an iPhone in the dark, and a reader that is
    excellent on one device beats one that is adequate everywhere — so the
    honest first task is deciding whether to do anything at all, not how.
 
@@ -459,6 +465,31 @@ not "dot"), and `◆` is silent. A trailing period is never vocalised: a
 period followed by a normal space and one followed by U+00A0 produce
 byte-identical audio, so the nbsp between verses is safe. The middle dot
 was the only offender, and it is gone from the text layer as of v11.
+
+## Where this is heading (2026-08-27)
+
+Two products out of one file, and that is the shape to hold:
+
+1. **The reading app** — the OLED-dark reader with its light mode, the drop
+   cap, hung numerals and headings. This is the thing on the home screen.
+2. **An Edge-facing listening page** — `?listen`, plain prose, aimed at a
+   browser whose own read-aloud is doing the work. Edge's neural voices are
+   better than Safari's or Chrome's, which is the whole reason this second
+   mode is worth having rather than just telling people to use Vigil's own
+   Listen button.
+
+Vigil's built-in Listen still exists and still works in both layouts; it is
+the fallback where a browser has no read-aloud at all, which is iOS Safari
+and the installed app.
+
+**Open: can Vigil reach Edge's neural voices directly?** Unverified. Edge
+is understood to expose its Microsoft "Online (Natural)" voices through
+`speechSynthesis`, in which case the existing voice picker already lists
+them and nothing needs building — check Settings → Read aloud → Voice in
+Edge before writing any code. If it does not, the same voices are sold
+through Azure Speech, which means an API key, per-character cost, and
+sending text to a third party — which for the ESV is a licensing question,
+not just a billing one. Public-domain translations would be unaffected.
 
 ## Reading layout and listening layout
 
