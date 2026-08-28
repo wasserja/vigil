@@ -166,6 +166,26 @@ body[data-face="plain"]  #page{font-family:var(--ui);letter-spacing:-.005em}
    cap opts out; the rest of the stanza keeps its hang. */
 .poem.has-cap{text-indent:0}
 
+/* The numerals are drawn from data-n by CSS rather than being text nodes,
+   and that is a functional choice, not a stylistic one. Edge's Read Aloud —
+   and any other "read this page to me" feature — extracts the page's TEXT.
+   As text nodes the numbers are read out loud between every verse, which
+   makes the chapter unlistenable: "one In the beginning two And the earth".
+   Generated content is not part of innerText, so it is skipped.
+
+   Measured 2026-08-27 in both Chrome and Edge, because the obvious fixes do
+   not work: aria-hidden leaves the numeral in innerText (Read Aloud is not
+   a screen reader and does not consult ARIA), and CSS `speak:never` is
+   unimplemented everywhere. Generated content was the only lever that moved
+   it. Screen readers still announce the numbers, because Chromium does
+   expose pseudo-element text to the accessibility tree — which is the
+   outcome we want: quiet for Read Aloud, intact for assistive tech.
+
+   Keep data-v as well. It is what landOn() anchors to, and it is not
+   interchangeable with data-n: on the drop cap, data-v is verse 1 while
+   data-n is the CHAPTER number. */
+.vn::before,.cap::before{content:attr(data-n)}
+
 .vn{
   font-family:var(--ui);
   font-size:.56em;
@@ -174,12 +194,21 @@ body[data-face="plain"]  #page{font-family:var(--ui);letter-spacing:-.005em}
   color:var(--gilt);
   opacity:.72;
   vertical-align:.42em;
-  margin-right:.32em;
+  /* 0, not .32em: the nbsp inside the span now supplies that gap. Measured
+     at 3.30px against the old margin's 3.39px, so the spacing is unchanged
+     to the eye. Restoring the margin here would double the gap. */
+  margin-right:0;
   margin-left:.06em;
   user-select:none;
 }
 .pg > .vn:first-child,.poem > .vn:first-child{margin-left:0}
-body[data-verses="off"] .vn{display:none}
+/* Hide the NUMERAL, keep the span. display:none would take the nbsp inside
+   it with it, and afterMark has already suppressed the following run's
+   leading space on the grounds that the numeral supplies the gap — so
+   removing the span entirely fuses the verses: "the earth.The earth was".
+   That was true before the numerals became generated content too; turning
+   verse numbers off has always run them together. */
+body[data-verses="off"] .vn::before{content:none}
 
 .woc{color:var(--ink)}
 body[data-woc="on"] .woc{color:var(--woc)}
@@ -1074,14 +1103,31 @@ function renderChapter(ch){
     for (const run of blk.runs){
       if (run.v != null){
         if (first && !capUsed && S.layout !== "verse"){
-          const cap = el("span","cap", String(S.chapter));
+          const cap = el("span","cap");
           cap.dataset.v = String(run.v);        // the numeral stands in for verse 1's number
+          cap.dataset.n = String(S.chapter);    // drawn by CSS, not a text node — see .cap::before
           p.appendChild(cap);
           p.classList.add("has-cap");
           capUsed = true;
         } else {
-          const vn = el("span","vn", String(run.v));
+          const vn = el("span","vn");
           vn.dataset.v = String(run.v);
+          vn.dataset.n = String(run.v);         // drawn by CSS, not a text node — see .vn::before
+          /* A NON-BREAKING space, so two verses sharing a paragraph do not
+             fuse in the text layer — "the LORDAnd he said". The numeral is
+             generated content and contributes no text of its own, and
+             afterMark suppresses the following run's leading space because
+             the numeral supplies the gap visually; speech needs the break
+             even though the eye does not.
+
+             It has to be U+00A0 rather than a plain space for two reasons:
+             a plain space adds a line-break opportunity immediately after
+             the numeral, which lets a verse number be orphaned at the end
+             of a line; and it collapses, so the gap would depend on where
+             the line broke. The nbsp binds the numeral to the first word of
+             its verse, which is what you want anyway. Its width replaces
+             .vn's old margin-right — see the note there. */
+          vn.textContent = "\u00a0";
           p.appendChild(vn);
         }
         afterMark = true;

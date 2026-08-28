@@ -436,6 +436,38 @@ a similar gap ever turns up.
   because fixing ESV poetry put a cap in a poem block for the first time on
   that path. The renderer adds `has-cap` to the paragraph carrying the cap.
 
+- **Verse numerals are CSS generated content, and that is functional.**
+  `.vn::before,.cap::before{content:attr(data-n)}`, with the spans carrying no
+  numeral text of their own. The reason is read-aloud: Edge's Read Aloud (and
+  any "read this page to me" feature) extracts the page's TEXT, so as text
+  nodes the numbers get spoken between every verse — "one In the beginning
+  two And the earth" — which makes a chapter unlistenable.
+
+  Measured in both Chrome and Edge on 2026-08-27, because the obvious fixes
+  do nothing: `aria-hidden` leaves the numeral in `innerText` (Read Aloud is
+  not a screen reader and does not consult ARIA), and CSS `speak:never` is
+  unimplemented everywhere. Generated content was the only lever that moved
+  it. Screen readers still announce the numbers, since Chromium exposes
+  pseudo-element text to the accessibility tree — which is the outcome we
+  want: quiet for Read Aloud, intact for assistive tech.
+
+  Three things are load-bearing and coupled, so do not change one alone:
+
+  1. **`data-n` is not `data-v`.** `data-v` is what `landOn()` anchors to. On
+     the drop cap they differ: `data-v` is verse 1, `data-n` is the CHAPTER.
+  2. **The nbsp inside `.vn`, and `margin-right:0`.** With the numeral gone
+     from the text layer, two verses in one paragraph fuse — "the LORDAnd he
+     said" — because `afterMark` suppresses the following run's leading
+     space. The span carries a `\u00a0` to separate them. It must be
+     non-breaking: a plain space adds a line-break opportunity right after
+     the numeral, which orphans it at a line end, and it collapses. Its
+     width (3.30px) replaces the old `.32em` margin (3.39px); restoring that
+     margin would double the gap.
+  3. **Verse numbers off hides `::before`, not the span.** `display:none` on
+     `.vn` would take the nbsp with it and fuse the verses again. This also
+     fixes a bug that predates all of the above: with numerals off, the old
+     build ran verses together visually too — "the earth.The earth was".
+
 - **Text inputs must never be smaller than 16px.** Safari on iOS auto-zooms
   the page when a field below that takes focus, and it does not zoom back on
   blur — the reader is left magnified with text running off the right and the
