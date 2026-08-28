@@ -260,6 +260,12 @@ body[data-layout="verse"] .poem{
   color:var(--ink-faint);
 }
 .colophon a{color:var(--ink-faint)}
+/* an inline control that reads as part of the sentence around it */
+.linkish{
+  appearance:none;background:none;border:0;padding:0;
+  font:inherit;color:var(--gilt);cursor:pointer;
+  text-decoration:underline;text-underline-offset:2px;
+}
 .colophon p{margin:.85em 0 0}
 .colophon p:first-of-type{margin-top:.45em}
 
@@ -1743,6 +1749,9 @@ let sheetView = null;
    it on for THAT page load only — a bookmark you can open straight into a
    read-aloud browser without changing how the app opens next time. */
 let listenView = false;
+/* The ESV key form is shown on demand once a key exists — see
+   drawTranslations. Reset whenever the sheet closes. */
+let esvKeyOpen = false;
 /* Which build the offline shell is actually serving — see the About row. */
 let swVersion = null;
 function askWorkerVersion(){
@@ -1789,6 +1798,7 @@ function openSheet(view){
   drawSheet();
 }
 function closeSheet(){
+  esvKeyOpen = false;
   document.body.classList.remove("sheet-open");
   unlockScroll();
   sheetView = null; pickedBook = null;
@@ -2186,32 +2196,74 @@ function drawESVSearch(input, status, list){
   if (!searchQ) setTimeout(() => input.focus(), 60);
 }
 
+function pickESV(){
+  S.translation = "ESV"; S.translationName = "English Standard Version";
+  chapterCache.clear(); save(); closeSheet(); open(S.book, S.chapter);
+}
+
 async function drawTranslations(body){
   const back = $("#sheet-back");
   back.hidden = false;
 
-  const esv = el("div");
-  esv.appendChild(Object.assign(el("div","group-title"), { textContent:"English Standard Version" }));
-  const keyRow = el("div","row");
-  keyRow.style.display = "block";
-  const input = document.createElement("input");
-  input.type = "password"; input.placeholder = "ESV API key"; input.value = S.esvKey;
-  input.autocomplete = "off"; input.spellcheck = false;
-  keyRow.appendChild(input);
-  const useBtn = el("button","pillbtn primary","Read the ESV");
-  useBtn.style.marginTop = "10px";
-  useBtn.onclick = () => {
-    S.esvKey = input.value.trim();
-    if (!S.esvKey) { toast("Enter a key first"); return; }
-    S.translation = "ESV"; S.translationName = "English Standard Version";
-    chapterCache.clear(); save(); closeSheet(); open(S.book, S.chapter);
-  };
-  keyRow.appendChild(useBtn);
-  esv.appendChild(keyRow);
-  esv.appendChild(Object.assign(el("div","note"), {
-    innerHTML: 'Keys are free for personal use from <a href="https://api.esv.org" target="_blank" rel="noopener">api.esv.org</a>. The key stays on this device and is sent only to Crossway.'
-  }));
-  body.appendChild(esv);
+  /* Once a key is saved the ESV is simply another translation, so it sits
+     in a list like the rest instead of behind a form that never goes away.
+     The form returns on demand, and only then. */
+  if (S.esvKey && !esvKeyOpen){
+    body.appendChild(Object.assign(el("div","group-title"), { textContent:"With your key" }));
+    const mine = el("div","tlist");
+    const b = el("button");
+    b.append(el("b", null, "English Standard Version"), el("i", null, "ESV"));
+    if (S.translation === "ESV") b.setAttribute("aria-current","true");
+    b.onclick = pickESV;
+    mine.appendChild(b);
+    body.appendChild(mine);
+
+    const note = el("div","note");
+    note.appendChild(document.createTextNode(
+      "Read live from Crossway. Licensed text, so it can't be saved for offline reading. "));
+    const chg = el("button","linkish","Change key");
+    chg.onclick = () => { esvKeyOpen = true; drawSheet(); };
+    note.appendChild(chg);
+    body.appendChild(note);
+  } else {
+    const esv = el("div");
+    esv.appendChild(Object.assign(el("div","group-title"), { textContent:"English Standard Version" }));
+    const keyRow = el("div","row");
+    keyRow.style.display = "block";
+    const input = document.createElement("input");
+    input.type = "password"; input.placeholder = "ESV API key"; input.value = S.esvKey;
+    input.autocomplete = "off"; input.spellcheck = false;
+    keyRow.appendChild(input);
+    const useBtn = el("button","pillbtn primary","Read the ESV");
+    useBtn.style.marginTop = "10px";
+    useBtn.onclick = () => {
+      const k = input.value.trim();
+      if (!k) { toast("Enter a key first"); return; }
+      S.esvKey = k; esvKeyOpen = false;
+      pickESV();
+    };
+    keyRow.appendChild(useBtn);
+    if (S.esvKey){
+      const forget = el("button","pillbtn","Forget key");
+      forget.style.marginTop = "10px"; forget.style.marginLeft = "8px";
+      forget.onclick = () => {
+        S.esvKey = ""; esvKeyOpen = false;
+        /* Don't leave the reader pointed at a translation it can no longer
+           fetch. */
+        if (S.translation === "ESV"){
+          S.translation = "BSB"; S.translationName = "Berean Standard Bible";
+          chapterCache.clear(); save(); closeSheet(); open(S.book, S.chapter); return;
+        }
+        save(); drawSheet();
+      };
+      keyRow.appendChild(forget);
+    }
+    esv.appendChild(keyRow);
+    esv.appendChild(Object.assign(el("div","note"), {
+      innerHTML: 'Keys are free for personal use from <a href="https://api.esv.org" target="_blank" rel="noopener">api.esv.org</a>. The key stays on this device and is sent only to Crossway.'
+    }));
+    body.appendChild(esv);
+  }
 
   body.appendChild(Object.assign(el("div","group-title"), { textContent:"Free to read and to keep" }));
   const list = el("div","tlist");

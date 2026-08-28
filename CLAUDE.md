@@ -394,6 +394,13 @@ render a row that opens nothing — a floor, not a path.
 
 `resultRow` is shared by both engines so they cannot drift apart.
 
+Once the key is saved the ESV appears as an ordinary row in the translation
+sheet, under "With your key", and the entry form goes away — a form that
+never leaves is furniture, not a feature. "Change key" brings it back, and
+that state (`esvKeyOpen`) resets whenever the sheet closes. "Forget key"
+also switches the reader off the ESV if it is currently selected, so the
+app is never pointed at a translation it can no longer fetch.
+
 The key is entered at runtime and stored on-device. It must never be pasted
 into a transcript, a commit, or this file. For local testing there is a copy
 at `~/.esv_api_key` (mode 600, outside the repo and outside the homelab
