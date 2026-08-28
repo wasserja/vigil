@@ -460,6 +460,34 @@ period followed by a normal space and one followed by U+00A0 produce
 byte-identical audio, so the nbsp between verses is safe. The middle dot
 was the only offender, and it is gone from the text layer as of v11.
 
+## Reading layout and listening layout
+
+Two layouts, ONE file. Settings → Read aloud → "Listening layout", and
+`?listen` in the URL turns it on for that page load only — a bookmark you
+can hand to a read-aloud browser without changing how the app opens next
+time. `listenView` is the live flag; `S.listen` is the stored preference.
+
+Listening layout emits **only the prose**: no running head, no drop cap, no
+verse numerals, no headings, no closing `◆`. The colophon stays, because
+the ESV notice has to be displayed.
+
+**It omits those elements rather than emptying them, and that distinction
+is the whole point.** Emptying them is what made reader views misbehave —
+an empty `<h2>` and an orphan text fragment are how the word "it." ended up
+promoted to the page title. What listening layout leaves behind is ordinary
+paragraphs of text, which every extractor and speech engine handles
+correctly. `.vt` wrappers are kept, because they are inline and harmless
+and Vigil's own Listen needs them to highlight.
+
+Between verses it emits a plain space rather than the nbsp the reading
+layout uses: there is no numeral here to be orphaned at a line end.
+
+**A separate folder was considered and rejected.** It would have meant two
+copies of the renderer, the block contract, the ESV adapter and the
+licensing code, and the first fix applied to one and not the other would
+have started the drift. The conflict was never "one page cannot do both" —
+it was empty elements, and a flag in the renderer settles it.
+
 ## One run of prose is one text node
 
 A source may split a single verse across several runs for reasons that

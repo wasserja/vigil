@@ -152,6 +152,9 @@ body[data-face="plain"]  #page{font-family:var(--ui);letter-spacing:-.005em}
   font-size:.92em;
 }
 .pg{margin:0 0 1.05em}
+/* Without numerals or a drop cap, paragraphs need their own separation. */
+#page.plain .pg{margin:0 0 1.35em}
+#page.plain .pg:first-of-type{margin-top:0}
 .pg + .pg{margin-top:0}
 .poem{
   margin:0;
@@ -983,7 +986,7 @@ const S = {
   fs: 19, lh: 1.68, measure: 34,
   face: "book", verses: "on", layout: "para", woc: "off",
   awake: false, autohide: true,
-  rate: 0.95, voice: ""
+  rate: 0.95, voice: "", listen: false
 };
 
 const chapterCache = new Map();          // "TID/BOOK/CH" -> normalised chapter
@@ -1100,8 +1103,17 @@ function renderChapter(ch){
   const page = $("#page");
   page.innerHTML = "";
 
+  /* Listening layout: emit ONLY the prose. Everything decorative is left
+     out entirely rather than emptied — an empty <h2> or an orphan fragment
+     is exactly what makes a reader view misbehave (it once promoted the
+     word "it." to the page title). What is left is ordinary paragraphs of
+     text, which every extractor and read-aloud engine handles correctly. */
+  const plain = listenView;
+  page.classList.toggle("plain", plain);
+
   /* data-t, not a text node: see the read-aloud gotcha. This line is
      metadata, and it carries a U+00B7 that speech engines pronounce "dot". */
+  if (!plain){
   const ref = el("p","ref-line");
   ref.dataset.t = `${ch.bookName} ${S.chapter} · ${S.translation}`;
   /* Belt and braces. Generated content keeps this out of the page's TEXT,
@@ -1112,6 +1124,7 @@ function renderChapter(ch){
      a screen reader is not denied anything it cannot get elsewhere. */
   ref.setAttribute("aria-hidden", "true");
   page.appendChild(ref);
+  }
 
   const blocks = S.layout === "verse" ? toVerseLines(ch.blocks) : ch.blocks;
   let capUsed = false;
@@ -1124,9 +1137,11 @@ function renderChapter(ch){
        drawn from data-t so read-aloud does not interrupt the chapter with
        them. Same mechanism as the verse numerals. */
     if (blk.kind === "heading"){
+      if (plain) return;                    // editorial, and not to be spoken
       const h = el("h2","hd"); h.dataset.t = blk.text; page.appendChild(h); return;
     }
     if (blk.kind === "sub"){
+      if (plain) return;
       const b = el("p","sub"); b.dataset.t = blk.text; page.appendChild(b); return;
     }
 
@@ -1144,7 +1159,13 @@ function renderChapter(ch){
     for (const run of blk.runs){
       if (run.v != null){
         curV = run.v;
-        if (first && !capUsed && S.layout !== "verse"){
+        if (plain){
+          /* No marker at all — just the word space that keeps two verses
+             from fusing. A plain space, not an nbsp: there is no numeral
+             here to be orphaned at a line end. */
+          if (p.childNodes.length) p.appendChild(document.createTextNode(" "));
+          afterMark = true;
+        } else if (first && !capUsed && S.layout !== "verse"){
           const cap = el("span","cap");
           cap.dataset.v = String(run.v);        // the numeral stands in for verse 1's number
           cap.dataset.n = String(S.chapter);    // drawn by CSS, not a text node — see .cap::before
@@ -1219,9 +1240,11 @@ function renderChapter(ch){
     if (p.childNodes.length) page.appendChild(p);
   });
 
-  const closeMark = el("div","close-mark");   // glyph drawn in CSS, see .close-mark::before
-  closeMark.setAttribute("aria-hidden", "true");   // pure ornament
-  page.appendChild(closeMark);
+  if (!plain){
+    const closeMark = el("div","close-mark");   // glyph drawn in CSS, see .close-mark::before
+    closeMark.setAttribute("aria-hidden", "true");   // pure ornament
+    page.appendChild(closeMark);
+  }
 
   const col = el("div","colophon");
   /* The separator is only earned when something follows it. */
@@ -1716,6 +1739,10 @@ function updateProgress(){
    9 · Sheets
    ══════════════════════════════════════════════════════════════ */
 let sheetView = null;
+/* Listening layout. Separate from S.listen because ?listen in the URL turns
+   it on for THAT page load only — a bookmark you can open straight into a
+   read-aloud browser without changing how the app opens next time. */
+let listenView = false;
 /* Which build the offline shell is actually serving — see the About row. */
 let swVersion = null;
 function askWorkerVersion(){
@@ -1917,8 +1944,17 @@ function drawSettings(body){
   row("Keep the screen awake", "Stops the display dimming mid-chapter.",
       toggle(S.awake, v => { S.awake = v; v ? requestWake() : releaseWake(); }));
 
+  group("Read aloud");
+  row("Listening layout",
+      "Drops the chapter numeral, verse numbers and headings, leaving plain "
+      + "paragraphs. Use it when a browser's own read-aloud or reader view "
+      + "will be doing the reading.",
+      toggle(listenView, v => {
+        S.listen = v; listenView = v;
+        redrawKeepScroll();
+      }));
+
   if (speechOK()){
-    group("Read aloud");
     row("Speed", "Scripture wants a slower voice than a web page.",
         slider(0.6, 1.3, 0.05, S.rate, v => S.rate = v));
     const voices = englishVoices();
@@ -2332,7 +2368,7 @@ function save(){
       theme:S.theme, bookOrder:S.bookOrder, lum:S.lum, warm:S.warm, fs:S.fs, lh:S.lh, measure:S.measure,
       face:S.face, verses:S.verses, layout:S.layout, woc:S.woc,
       awake:S.awake, autohide:S.autohide,
-      rate:S.rate, voice:S.voice
+      rate:S.rate, voice:S.voice, listen:S.listen
     });
     Store.set("position", { book:S.book, chapter:S.chapter });
   }, 250);
@@ -2429,6 +2465,10 @@ $("#sheet-back").onclick  = () => {
 (async function boot(){
   const saved = await Store.get("settings");
   if (saved) Object.assign(S, saved);
+  /* ?listen turns the listening layout on for THIS load without changing
+     the stored preference, so the URL can be bookmarked and handed to a
+     read-aloud browser while the app itself still opens the way you left it. */
+  listenView = S.listen || /[?&]listen(=1|=true)?(&|$)/.test(location.search);
   const pos = await Store.get("position");
   if (pos && byId[pos.book]) { S.book = pos.book; S.chapter = pos.chapter; }
   for (const k of (await Store.get("offline")) || []) offlineBooks.add(k);
