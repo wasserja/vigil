@@ -174,7 +174,26 @@ Two more things the live API taught us, neither guessable from the docs:
 - Wake Lock requires a secure context, so it is dead over plain `http://` on a
   LAN address. `https://` or `localhost` only.
 - Deployment target is GitHub Pages at a **subpath** (`/vigil/`), which matters
-  for service worker scope.
+  for service worker scope. **The URL is not free to change** — see the next
+  two entries before agreeing to move it anywhere.
+- **The origin is where the user's data lives.** Settings, last position, the
+  offline index and every downloaded book are keyed to `wasserja.github.io`
+  by the browser. A custom domain is therefore not a DNS change: it is a new
+  origin, so every device silently starts empty, and any installed PWA keeps
+  pointing at the old URL and keeps working there. Nothing warns anyone, and
+  there is no migration path a static page can perform — the two origins
+  cannot read each other's storage. If a custom domain is ever genuinely
+  wanted, that cost is the decision, not the DNS.
+- **Vigil is reachable from `wasserja.github.io` too, and must not be MOVED
+  there.** That root is a separate one-file repo (`wasserja/wasserja.github.io`)
+  holding a redirect to `/vigil/`, so the app can be opened by typing a
+  username on a machine with no history. It is a redirect rather than a
+  relocation for the reason in the entry above this one: the service worker
+  takes the scope it is served from, so at `/` it would sit in front of every
+  other project page on the account. The redirect also keeps the origin
+  identical, which is the whole point. `spoo.me/vigil` is a third-party
+  shortener pointing at the same place — a convenience, and the only one of
+  the three that depends on someone else staying alive.
 - **Desktop browsers cannot hide their URL bar on scroll, at all.** Chrome,
   Safari and Firefox on a desktop only surrender chrome to the Fullscreen API,
   which needs a user gesture and shows its own overlay. So "full screen on
