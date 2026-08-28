@@ -178,11 +178,16 @@ Two more things the live API taught us, neither guessable from the docs:
 - **Desktop browsers cannot hide their URL bar on scroll, at all.** Chrome,
   Safari and Firefox on a desktop only surrender chrome to the Fullscreen API,
   which needs a user gesture and shows its own overlay. So "full screen on
-  desktop" is not the same problem as on a phone and is not solved by the
-  scroll work above — it belongs with the larger-screens question.
+  desktop" is not the same problem as on a phone and was not solved by the
+  scroll work above — nor by the layout work of 2026-08-28, which is a
+  different problem entirely. See "What is still not solved on a desktop".
 - The manifest still sets `"orientation": "portrait"`, which locks the
-  installed app even on an iPad. Deliberate for a phone; an open question if
-  tablets ever matter.
+  installed app even on an iPad. **Now a live question rather than a
+  hypothetical one**, since the layout handles a landscape tablet as of
+  2026-08-28 and the manifest is what stops anyone seeing it. Not changed
+  unilaterally: the lock is deliberate on a phone — a reader that rotates
+  in bed is a worse reader — and there is no way to say "portrait on a
+  handset, free on a tablet" in a manifest. It is one decision for both.
 
 ## Priorities
 
@@ -198,8 +203,9 @@ Two more things the live API taught us, neither guessable from the docs:
    adapter; see "Wanted: NIV, NASB, The Message". Register for their free
    Starter tier and confirm those three are selectable *before* any code.
 3. Hebrew and Greek. Scouted, further out.
-4. Larger screens. Postponed deliberately, and now has to absorb desktop
-   full-screen too.
+4. **Desktop full screen.** All that is left of the larger-screens item
+   below, now that the layout part is done — and it is a separate problem,
+   not a layout one. See "Known constraints".
 
 The numbered history below is what has already been done.
 
@@ -223,35 +229,12 @@ The numbered history below is what has already been done.
    ANDed, results cap at 300. A hit opens the chapter and lands on the verse.
 4. ~~**ESV**.~~ **Done 2026-08-27.** Parser tested and fixed; search built on
    `/v3/passage/search/`; copyright verified. See the ESV section below.
-5. **Larger screens: worth it, or not?** **POSTPONED 2026-08-27**, and
-   deliberately. The priority is reading on Android and iPhone, and
-   read-aloud. Do not pick this up ahead of those. The notes below are kept
-   because the analysis is still good whenever it does come back — and note
-   that it now also has to absorb desktop full-screen, since a desktop
-   browser will not surrender its chrome to scrolling.
-
-   Originally phrased as a question, and still one. The brief is an iPhone in the dark, and a reader that is
-   excellent on one device beats one that is adequate everywhere — so the
-   honest first task is deciding whether to do anything at all, not how.
-
-   What already adapts: `--pad` is `7vw`, `#page` is capped by `--measure`
-   (26/34/44rem via the Column setting) and centred, the book picker goes to
-   three columns at 560px, and the chapter grid to eight at 480px.
-
-   What does not: type size is fixed in px and never scales with the
-   viewport; `--measure` maxes out at 44rem, so on a laptop the column stays
-   put in a wide field of black; the drop cap, verse numbers and headings are
-   all tuned in `em` against a phone-sized body; and the top/bottom padding is
-   `20vh`/`46vh`, which on a short landscape window is most of the screen.
-
-   Things to weigh before touching it: an iPad in portrait is genuinely close
-   to a large phone and probably needs nothing. Landscape is where it breaks
-   down, and that may argue for a height-based query rather than a width-based
-   one. Two-column reading is the obvious "desktop" move and is probably wrong
-   here — it fights the scroll-driven immersion logic and the edge masks. If
-   the answer turns out to be "raise the `--measure` ceiling and leave
-   everything else alone", that is a fine answer and should be recorded as
-   such rather than expanded into a project.
+5. ~~**Larger screens: worth it, or not?**~~ **Done 2026-08-28.** Worth it,
+   and cheaper than the original analysis feared — see "Larger screens"
+   below. The answer landed close to the prediction recorded here: raise
+   the effective measure, cap the things that were in viewport units, and
+   leave everything else alone. No two-column reading, no desktop layout,
+   no second design.
 
 ## ESV: the API v3 terms, and what they mean here
 
@@ -423,6 +406,113 @@ The key is entered at runtime and stored on-device. It must never be pasted
 into a transcript, a commit, or this file. For local testing there is a copy
 at `~/.esv_api_key` (mode 600, outside the repo and outside the homelab
 backup allowlist); read it into a request, never echo it.
+
+## Larger screens (done 2026-08-28)
+
+The question this was postponed as — "worth it, or not?" — turned out to be
+the wrong shape. There was a real bug underneath it, and once that was fixed
+the rest was three caps and a rail.
+
+**The bug: the gutter ate the column.** `--pad` was `7vw` and `#page` is
+`border-box` under `max-width:var(--measure)`. On a phone that is invisible,
+because the viewport is narrower than the measure and the padding comes out
+of screen width. The moment the window is wider than the measure, the column
+stops growing and the padding keeps going — so a 1440px window put 100px of
+gutter inside a 544px box and left 444px of text, and a 1920px window left
+less. **The reader got NARROWER as the screen got wider.** `--pad` is now
+`min(7vw, 32px)`.
+
+**32px is not a round number, it is a floor on regression.** 7vw of a 430pt
+iPhone Pro Max is 30.1px, so a 30px cap clipped it — a tenth of a pixel, but
+enough to shift every glyph in the column and re-wrap a line. At 32 the
+render is byte-identical up to a 457pt viewport. Any future cap in this
+stylesheet gets the same treatment: check it against the widest phone before
+believing it is phone-neutral.
+
+**Everything else scales through one variable.** `--zoom` is `1` at phone
+sizes and steps up on a viewport a phone does not have:
+
+    820 x  620   1.08     iPad portrait, small laptop window
+   1200 x  760   1.16     ordinary laptop
+   1700 x  900   1.24     external display
+
+It multiplies `--fs` and `--measure` together, so characters-per-line stays
+where it was tuned rather than shrinking as the type grows. The reason for
+one knob rather than a set of per-element rules is that the drop cap, verse
+numerals and headings are all already in `em` — they follow the body size for
+free. The only two things that needed reaching into were `.ref-line` and
+`.colophon`, which are in `rem` on purpose (they must NOT follow the Size
+slider) and so are written `calc(.62rem * var(--zoom))`.
+
+**Every query is width AND height.** A 1440x700 browser window is wide but
+short, and scaling type up there costs lines on a screen that has few to
+give. This is the height-based query the original notes guessed at; it just
+lives alongside the width rather than replacing it.
+
+**The vertical padding is capped, not converted.** `20vh`/`46vh` stays in
+`vh` — the bottom band is what lets the last verse rise to a comfortable
+reading height instead of sitting on the bezel, and that is genuinely
+proportional. It is wrapped in `min(…, 190px)` / `min(…, 440px)`, and both
+caps sit above what any phone produces (46vh of an 844pt iPhone is 388px),
+so they bite on a tall desktop and nowhere else.
+
+**Chrome is railed, sheets are narrowed.** `.chrome` keeps its full-bleed
+gradient and the flex row moved one level in to `.bar`, which above 820px
+takes the column's width and centres. Below that breakpoint `.bar` is a
+plain flex row and the bars render exactly as before. The rail is
+`--measure * --zoom` with NO `--pad` added: `--measure` is a border-box
+width and already contains the gutter, and adding it put the title exactly
+one `--pad` left of the text it labels. Subtracting `.btn`'s own 11px of
+padding lines the title's glyphs up with the first letter of the chapter.
+The sheet stays a bottom sheet — same gesture on a tablet as on a phone,
+and it keeps the column visible above it — but narrows to 560px and
+centres, instead of spreading three columns of book names across a metre.
+
+**Two things came along because they were the same bug.** `#toast` was
+`position:absolute` inside an unpositioned `#app`, so since the scroller
+inversion it resolved against the document rather than the viewport and
+scrolled away with the text; it is `fixed` now. And `#sheet`'s transform is
+composed from `--sx` (the centring) and `--drag` (drag-to-dismiss) rather
+than assigned, because the drag handler used to write `style.transform`
+directly — which would have silently thrown the centring away the first
+time a finger touched the grip on an iPad.
+
+**A mouse gets two things a thumb does not.** Hover states, gated on
+`(hover:hover) and (pointer:fine)` so a tap never leaves a phone button
+stuck in a lit state; and a `pointermove` near either edge of the window
+brings the chrome back, because the phone's two ways of recalling it —
+scroll-up and tap — are both things a thumb does constantly while reading
+and a mouse does not. It is guarded on `pointerType === "mouse"` and on the
+same media query, and it stays out of the middle of the window, which is
+where a reader's cursor sits.
+
+**What was considered and NOT done**, so it does not get relitigated:
+two-column reading (fights the scroll-driven immersion logic and the edge
+fades, and a psalter is not a newspaper), a desktop-specific layout, and
+raising the `--measure` ceiling past 44rem — the Column setting still tops
+out there, and `--zoom` is what makes Wide actually wide on a desktop.
+
+**Verifying a layout change here.** Screenshot the same page before and
+after at 320/390/430 and require the phone widths to come back
+byte-identical; that is the whole test, and it is what caught the 30px pad
+cap. Headless Chrome needs care: `--headless=old` silently clamps a window
+to a 500px minimum, so `--window-size=390,844` renders a 500px layout and
+every phone check is a lie. The new headless mode honours the size but
+stalls the app under `--virtual-time-budget`. Driving it over CDP with
+`Emulation.setDeviceMetricsOverride` is the only arrangement that gets a
+true 390px viewport.
+
+## What is still not solved on a desktop
+
+**Full screen.** Unchanged and unaffected by any of the above: a desktop
+browser will not surrender its chrome to scrolling, only to the Fullscreen
+API, which needs a user gesture and shows its own overlay. So it wants a
+control somewhere — most likely a Settings row, guarded on
+`document.fullscreenEnabled` — and that is a feature with a decision in it,
+not a layout fix. Left deliberately.
+
+Keyboard already works and predates this: arrows or `h`/`l` turn the page,
+`g` opens the passage picker, `.` toggles the chrome, Escape closes a sheet.
 
 ## The bottom gap — RESOLVED 2026-08-27
 

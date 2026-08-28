@@ -77,11 +77,45 @@ body{
   --fs:19px;
   --lh:1.68;
   --measure:34rem;
-  --pad:7vw;
+  /* 7vw is right on a phone and wrong the moment the column stops filling
+     the window: #page is border-box and capped at --measure, so on a laptop
+     a 100px gutter was eating the column from the inside — the wider the
+     screen, the narrower the text. The cap is what stops that.
+
+     32px, not 30: the cap has to sit ABOVE 7vw of the widest phone or it
+     starts nudging the mobile layout it exists to leave alone. 7vw of a
+     430pt iPhone Pro Max is 30.1px, which a 30px cap clipped — a tenth of
+     a pixel, but enough to shift every glyph in the column. At 32 the
+     rendering is byte-identical up to a 457pt viewport and the cap only
+     ever bites on a tablet or a desktop. */
+  --pad:min(7vw, 32px);
+
+  /* One knob for larger screens, and it multiplies the type and the column
+     TOGETHER so the measure stays at the characters-per-line it was tuned
+     to. 1 on a phone: the mobile design does not move. */
+  --zoom:1;
 
   --fade:520ms;
 }
 @media (prefers-reduced-motion: reduce){ :root{--fade:1ms} }
+
+/* ── larger screens ───────────────────────────────────────── */
+/* The phone is the design and the baseline; everything here is gated on a
+   viewport a phone does not have. What grows is the reading column, not the
+   layout — no second column, no panels, no sidebar. Two-column reading was
+   considered and rejected: it fights the scroll-driven immersion logic and
+   the edge fades, and a psalter is not a newspaper.
+
+   Height is in every query as well as width. A 1440x700 browser window is
+   wide but SHORT, and scaling type up there would cost lines of text on a
+   screen that has few to give. Landscape is where this breaks down, which
+   is why it is not a width-only breakpoint.
+
+   iPad portrait (820x1180) lands on the first step at 1.08 — very close to
+   the "probably needs nothing" it was predicted to need. That is deliberate. */
+@media (min-width: 820px) and (min-height: 620px){ :root{--zoom:1.08} }
+@media (min-width:1200px) and (min-height: 760px){ :root{--zoom:1.16} }
+@media (min-width:1700px) and (min-height: 900px){ :root{--zoom:1.24} }
 
 /* ── shell ────────────────────────────────────────────────── */
 /* Height is stated explicitly rather than left to inset:0. This is good
@@ -105,14 +139,19 @@ body{
 #fade-bot{bottom:0;background:linear-gradient(to top,var(--void),var(--void-0))}
 
 #page{
-  max-width:var(--measure);
+  max-width:calc(var(--measure) * var(--zoom));
   margin:0 auto;
+  /* The vertical rhythm is proportional on purpose — the bottom band is what
+     lets the last verse rise to a comfortable reading height instead of
+     sitting on the bezel — so it stays in vh and is only CAPPED. Both caps
+     sit above what any phone produces (46vh of an 844pt iPhone is 388px), so
+     they bite on a tall desktop or iPad and nowhere else. */
   padding:
-    calc(env(safe-area-inset-top,0px) + 20vh)
+    calc(env(safe-area-inset-top,0px) + min(20vh, 190px))
     var(--pad)
-    calc(env(safe-area-inset-bottom,0px) + 46vh);
+    calc(env(safe-area-inset-bottom,0px) + min(46vh, 440px));
   font-family:var(--face);
-  font-size:var(--fs);
+  font-size:calc(var(--fs) * var(--zoom));
   line-height:var(--lh);
   color:var(--ink);
   font-variant-numeric:oldstyle-numeral;
@@ -126,7 +165,10 @@ body[data-face="plain"]  #page{font-family:var(--ui);letter-spacing:-.005em}
 /* ── the text itself ──────────────────────────────────────── */
 .ref-line{
   font-family:var(--ui);
-  font-size:.62rem;
+  /* rem, not em, so it does NOT follow the Size slider — but it must follow
+     --zoom, or the running head shrinks away as the column grows. Same for
+     the colophon. */
+  font-size:calc(.62rem * var(--zoom));
   letter-spacing:.22em;
   text-transform:uppercase;
   color:var(--gilt-dim);
@@ -254,7 +296,7 @@ body[data-layout="verse"] .poem{
 .colophon{
   margin:2.6em 0 0;
   font-family:var(--ui);
-  font-size:.62rem;
+  font-size:calc(.62rem * var(--zoom));
   line-height:1.7;
   letter-spacing:.06em;
   color:var(--ink-faint);
@@ -272,12 +314,18 @@ body[data-layout="verse"] .poem{
 /* ── chrome (dissolves) ───────────────────────────────────── */
 .chrome{
   position:fixed;left:0;right:0;
-  display:flex;align-items:center;gap:2px;
   font-family:var(--ui);
   opacity:1;
   transition:opacity var(--fade) ease, transform var(--fade) ease;
   z-index:4;
 }
+/* The flex row lives one level in from .chrome so the gradient can stay
+   full-bleed while the CONTROLS are railed to the text column on a wide
+   screen — otherwise the title and the settings button end up flung to
+   opposite corners of a 1920px window with the reading column stranded
+   between them. Below the breakpoint .bar is a plain flex row and the bars
+   are byte-for-byte what they were. */
+.bar{display:flex;align-items:center;gap:2px}
 #topbar{
   top:0;
   padding:calc(env(safe-area-inset-top,0px) + 8px) 10px 14px;
@@ -291,6 +339,19 @@ body[data-layout="verse"] .poem{
 body.immersive .chrome{opacity:0;pointer-events:none}
 body.immersive #topbar{transform:translateY(-6px)}
 body.immersive #botbar{transform:translateY(6px)}
+@media (min-width:820px){
+  /* --measure is a border-box width and already contains --pad, so the rail
+     is the column, not the column plus its gutters. Getting that wrong put
+     the title exactly one --pad to the left of the text it labels. */
+  .bar{
+    max-width:calc(var(--measure) * var(--zoom));
+    margin:0 auto;
+    /* .btn carries 11px of its own side padding; subtracting it lines the
+       title's glyphs up with the first letter of the chapter rather than
+       with the edge of its button box. */
+    padding:0 max(0px, calc(var(--pad) - 11px));
+  }
+}
 
 .btn{
   appearance:none;-webkit-appearance:none;
@@ -350,12 +411,32 @@ body.sheet-open #scrim{opacity:1;pointer-events:auto}
   background:var(--void);
   border-top:1px solid var(--ash);
   border-radius:16px 16px 0 0;
-  transform:translateY(101%);
+  /* Three translates, composed, because two other things need to write to
+     this transform without knowing about each other: --sx centres the sheet
+     once it stops being full-width (a wide screen), and --drag is the
+     drag-to-dismiss offset. The drag handler used to assign
+     style.transform directly, which silently threw the centring away the
+     first time a finger touched the grip on an iPad. Set the variable, not
+     the property. */
+  --sx:0px;
+  transform:translateX(var(--sx)) translateY(101%) translateY(var(--drag,0px));
   transition:transform 300ms cubic-bezier(.22,.9,.28,1);
   font-family:var(--ui);
   color:var(--ink);
 }
-body.sheet-open #sheet{transform:translateY(0)}
+body.sheet-open #sheet{transform:translateX(var(--sx)) translateY(var(--drag,0px))}
+/* A bottom sheet is still the right shape here — it keeps the reading
+   column visible above it, and it is the same gesture on an iPad as on a
+   phone. What is wrong on a wide screen is a 1920px-wide one, with two
+   columns of book names a metre apart. So it narrows; it does not become a
+   different component. */
+@media (min-width:820px){
+  #sheet{
+    left:50%;right:auto;--sx:-50%;
+    width:min(560px, 92vw);
+    max-height:min(80vh, 780px);
+  }
+}
 /* The document is the scroller, so an open sheet has to freeze it or the
    page scrolls behind the sheet. top is set in JS to the frozen offset. */
 body.locked{position:fixed;left:0;right:0;width:100%}
@@ -562,6 +643,20 @@ input:focus{outline:none;border-color:var(--gilt-dim)}
 }
 .note a{color:var(--gilt-dim)}
 
+/* Hover exists only where there is a real pointer. Guarded on both
+   hover:hover and pointer:fine so a touch device never inherits a sticky
+   :hover after a tap, which is the classic way a phone ends up with a
+   button stuck in a lit state. */
+@media (hover:hover) and (pointer:fine){
+  .btn:hover{color:var(--ink);background:var(--press)}
+  .btn[disabled]:hover{background:none}
+  .books button:hover,.tlist button:hover,.results button:hover{background:var(--press)}
+  .chapters button:hover,.pillbtn:hover{background:var(--surface-hi)}
+  .seg button:hover:not([aria-selected="true"]),
+  .steps button:hover:not([aria-selected="true"]){color:var(--ink)}
+  .linkish:hover,.colophon a:hover{color:var(--gilt)}
+}
+
 /* states */
 .state{
   padding:8vh 0;text-align:center;
@@ -581,14 +676,18 @@ input:focus{outline:none;border-color:var(--gilt-dim)}
 @media (prefers-reduced-motion: reduce){.spin{animation-duration:2.4s}}
 
 #toast{
-  position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 74px);
+  /* fixed, not absolute. #app is unpositioned, so an absolute toast resolves
+     against the initial containing block — which since the scroller
+     inversion is the DOCUMENT, not the viewport: the toast was pinned near
+     the bottom of the first screenful and scrolled away with the text. */
+  position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 74px);
   transform:translate(-50%,8px);
   z-index:12;pointer-events:none;
   background:var(--surface);border:1px solid var(--line);
   color:var(--ink);font-family:var(--ui);font-size:12.5px;
   padding:9px 15px;border-radius:20px;
   opacity:0;transition:opacity 220ms ease,transform 220ms ease;
-  max-width:80vw;text-align:center;
+  max-width:min(80vw, 420px);text-align:center;
 }
 #toast.on{opacity:1;transform:translate(-50%,0)}
 </style>
@@ -602,11 +701,13 @@ input:focus{outline:none;border-color:var(--gilt-dim)}
   <div class="fade" id="fade-bot"></div>
 
   <header id="topbar" class="chrome">
+   <div class="bar">
     <button class="btn title" id="btn-passage">Genesis 1 <small>▾</small></button>
     <span class="grow"></span>
     <button class="btn" id="btn-search" aria-label="Search" style="font-size:16px">&#8981;</button>
     <button class="btn tag" id="btn-trans">BSB</button>
     <button class="btn" id="btn-settings" aria-label="Reading settings" style="font-size:15px;letter-spacing:-.04em">aA</button>
+   </div>
   </header>
 
   <main id="reader">
@@ -614,11 +715,13 @@ input:focus{outline:none;border-color:var(--gilt-dim)}
   </main>
 
   <footer id="botbar" class="chrome">
+   <div class="bar">
     <button class="btn" id="btn-prev">‹ <span></span></button>
     <span class="grow"></span>
     <button class="btn" id="btn-speak" aria-pressed="false">Listen</button>
     <span class="grow"></span>
     <button class="btn" id="btn-next"><span></span> ›</button>
+   </div>
   </footer>
 
   <div id="scrim"></div>
@@ -2520,6 +2623,22 @@ window.addEventListener("scroll", () => {
   lastY = y;
 }, { passive: true });
 
+/* On a phone the chrome comes back on scroll-up or a tap, and both are
+   things a thumb does constantly. A mouse does neither while reading, so on
+   a pointer device the bars are otherwise gone until you think to click the
+   text. Approaching either edge is the desktop convention for reclaiming
+   hidden chrome, and it stays out of the way in the middle of the window —
+   which is where a reader's cursor sits. Guarded on pointerType so a
+   stylus or a finger generating pointer events cannot trip it. */
+if (matchMedia("(hover:hover) and (pointer:fine)").matches){
+  window.addEventListener("pointermove", (e) => {
+    if (e.pointerType !== "mouse") return;
+    if (document.body.classList.contains("sheet-open")) return;
+    const edge = 72;
+    if (e.clientY < edge || e.clientY > window.innerHeight - edge) showChrome();
+  }, { passive:true });
+}
+
 reader.addEventListener("click", (e) => {
   if (e.target.closest("a,button")) return;
   const sel = window.getSelection();
@@ -2576,12 +2695,14 @@ $("#sheet-back").onclick  = () => {
   sheet.addEventListener("touchmove", (e) => {
     if (y0 == null) return;
     const d = Math.max(0, e.touches[0].clientY - y0);
-    sheet.style.transform = `translateY(${d}px)`;
+    /* --drag, not style.transform: the sheet composes its own centring into
+       that property on a wide screen and assigning it would drop it. */
+    sheet.style.setProperty("--drag", d + "px");
   }, { passive:true });
   sheet.addEventListener("touchend", (e) => {
     if (y0 == null) return;
     const d = Math.max(0, e.changedTouches[0].clientY - y0);
-    sheet.style.transition = ""; sheet.style.transform = "";
+    sheet.style.transition = ""; sheet.style.removeProperty("--drag");
     y0 = null;
     if (d > 90) closeSheet();
   });
