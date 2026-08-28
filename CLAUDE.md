@@ -466,6 +466,54 @@ period followed by a normal space and one followed by U+00A0 produce
 byte-identical audio, so the nbsp between verses is safe. The middle dot
 was the only offender, and it is gone from the text layer as of v11.
 
+## Someday: Hebrew and Greek, and searching the originals
+
+Wanted, and explicitly ranked BELOW read-aloud. Scouted 2026-08-27 so the
+groundwork is not re-done from scratch.
+
+**The texts are already reachable — no new source, no new adapter.**
+HelloAO carries them and they fit the existing block contract exactly
+(`{type:"verse", number, content:[…]}`), so `fetchAO` would parse them
+unchanged:
+
+- Hebrew OT: `hbo_wlc` / `heb_wlc` (Westminster Leningrad Codex)
+- Greek NT: `grc_sbl` (SBL), plus Byzantine, Textus Receptus, Tischendorf,
+  Family 35, Majority Text
+- Septuagint: `grc_bre` (Brenton)
+
+The picker filters on `language === "eng"`, so today they are one filter
+away. The API also reports `textDirection` per translation (`rtl` for
+Hebrew), so direction is data, not a lookup table we would have to keep.
+
+**What actually needs building, in order of difficulty:**
+
+1. **Direction and type.** `dir="rtl"` on the page, and the poem indents
+   and drop cap need checking under RTL — the cap floats left. The body
+   stack (Iowan Old Style / Charter / Palatino) has no Hebrew at all, so it
+   would fall back to a system font and the typography would stop being
+   Vigil's. Greek coverage in Palatino is passable. A real Hebrew face is
+   the honest cost here, and it is a download, which the app currently
+   never does.
+2. **Search normalisation — this is the actual work.** The WLC text carries
+   full pointing and cantillation (`בְּרֵאשִׁ֖ית`), and the Greek carries
+   accents and breathings. A user typing an unpointed word matches nothing,
+   because the stored form has combining marks between the letters. The
+   corpus and the query both need Unicode NFD plus stripping of
+   U+0591–U+05C7 (Hebrew) and U+0300–U+036F (Greek). That is a contained
+   change to `flattenChapter` and `parseQuery`, but it must be done on both
+   sides or it silently half-works.
+3. **Lemma search is NOT possible from this data.** Checked: the payloads
+   carry `content`, `number`, `type` and nothing else — no Strong's
+   numbers, no lemmas, no morphology. Hebrew and Greek are heavily
+   inflected, so surface-form search finds one conjugation and misses the
+   rest. If "search the originals" is meant to mean *searching by root*,
+   this source cannot do it and a morphology dataset (OSHB, MorphGNT) is a
+   separate project with its own licence and storage story.
+
+**Read-aloud should be off for these.** `speechSynthesis` has no Biblical
+Hebrew or Koine voices; a modern Hebrew voice would mispronounce pointed
+Biblical text confidently, which is worse than silence.
+
 ## Where this is heading (2026-08-27)
 
 Two products out of one file, and that is the shape to hold:
