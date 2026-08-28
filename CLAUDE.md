@@ -186,6 +186,24 @@ Two more things the live API taught us, neither guessable from the docs:
 
 ## Priorities
 
+**Next up, in this order (set 2026-08-27):**
+
+1. **A read-aloud-friendly version for Edge.** The `?listen` layout exists;
+   what is unfinished is proving it out in daily use and settling the voice
+   question — check Settings → Read aloud → Voice *in Edge* before writing
+   any code, because if Microsoft's neural voices are listed there, Vigil's
+   own Listen already sounds as good and much of this evaporates. See
+   "Reading layout and listening layout".
+2. **Modern translations — NIV, NASB, The Message.** Via an API.Bible
+   adapter; see "Wanted: NIV, NASB, The Message". Register for their free
+   Starter tier and confirm those three are selectable *before* any code.
+3. Hebrew and Greek. Scouted, further out.
+4. Larger screens. Postponed deliberately, and now has to absorb desktop
+   full-screen too.
+
+The numbered history below is what has already been done.
+
+
 1. ~~Replace the `Store` adapter.~~ **Done 2026-08-26.** `localStorage` for
    settings/position/offline index, IndexedDB for downloaded books, routed by
    the `bk:` key prefix. A quota failure aborts the IDB transaction, which
