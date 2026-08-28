@@ -436,6 +436,34 @@ a similar gap ever turns up.
   because fixing ESV poetry put a cap in a poem block for the first time on
   that path. The renderer adds `has-cap` to the paragraph carrying the cap.
 
+- **Read-aloud: everything that is not scripture is DRAWN, not written.**
+  The reading column is built so that the page's text layer contains the
+  chapter and nothing else. Edge's Read Aloud extracts page text, so anything
+  that is a real text node gets spoken. Drawn from `data-t` via `::before`:
+  the running head (`.ref-line`), section headings (`.hd`), Hebrew subtitles
+  (`.sub`), the closing `◆` (`.close-mark`), and the whole colophon. Verse
+  numerals use `data-n` — see the next entry.
+
+  Two characters were the audible symptom. **`·` is U+00B7 MIDDLE DOT and
+  speech engines pronounce it "dot"** — it sat in the running head and the
+  colophon separator, so a chapter began and ended with a spoken "dot". The
+  other was the colophon's link text: "berean.bible" reads as "berean dot
+  bible".
+
+  **The colophon is drawn too, and that is safe here specifically.** The
+  usual objection — a legally required ESV notice must not depend on a
+  stylesheet — does not apply, because Vigil's stylesheet is INLINE in
+  `index.html`. There is no separate file that can fail to load while the
+  ESV text still shows. The notice stays visible in full, the esv.org link
+  keeps a real `href` and gains an `aria-label` so it has a real accessible
+  name despite generated visible text. **If Vigil ever grows an external
+  stylesheet, this trade collapses and the notice must go back to being a
+  text node.**
+
+  Each of these needs a separator in the text layer where the drawn element
+  used to provide one, or the words on either side fuse. See the nbsp note
+  below; the colophon has the same problem between the name and the link.
+
 - **Verse numerals are CSS generated content, and that is functional.**
   `.vn::before,.cap::before{content:attr(data-n)}`, with the spans carrying no
   numeral text of their own. The reason is read-aloud: Edge's Read Aloud (and

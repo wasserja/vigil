@@ -185,6 +185,12 @@ body[data-face="plain"]  #page{font-family:var(--ui);letter-spacing:-.005em}
    interchangeable with data-n: on the drop cap, data-v is verse 1 while
    data-n is the CHAPTER number. */
 .vn::before,.cap::before{content:attr(data-n)}
+/* Drawn rather than written, so Read Aloud speaks the chapter and nothing
+   else — see the read-aloud gotcha. */
+.ref-line::before,.hd::before,.sub::before{content:attr(data-t)}
+.close-mark::before{content:"\25c6"}
+.colophon .cname::before,.colophon a::before,.colophon p::before{content:attr(data-t)}
+.colophon .sep::before{content:"\00a0\00b7\00a0"}
 
 .vn{
   font-family:var(--ui);
@@ -1079,15 +1085,25 @@ function renderChapter(ch){
   const page = $("#page");
   page.innerHTML = "";
 
-  const ref = el("p","ref-line", `${ch.bookName} ${S.chapter} · ${S.translation}`);
+  /* data-t, not a text node: see the read-aloud gotcha. This line is
+     metadata, and it carries a U+00B7 that speech engines pronounce "dot". */
+  const ref = el("p","ref-line");
+  ref.dataset.t = `${ch.bookName} ${S.chapter} · ${S.translation}`;
   page.appendChild(ref);
 
   const blocks = S.layout === "verse" ? toVerseLines(ch.blocks) : ch.blocks;
   let capUsed = false;
 
   blocks.forEach((blk, i) => {
-    if (blk.kind === "heading"){ page.appendChild(el("h2","hd", blk.text)); return; }
-    if (blk.kind === "sub"){ page.appendChild(el("p","sub", blk.text)); return; }
+    /* Headings and Hebrew subtitles are editorial, not scripture, and are
+       drawn from data-t so read-aloud does not interrupt the chapter with
+       them. Same mechanism as the verse numerals. */
+    if (blk.kind === "heading"){
+      const h = el("h2","hd"); h.dataset.t = blk.text; page.appendChild(h); return;
+    }
+    if (blk.kind === "sub"){
+      const b = el("p","sub"); b.dataset.t = blk.text; page.appendChild(b); return;
+    }
 
     const p = el("p", blk.kind === "poem" ? "pg poem" : "pg");
     if (blk.kind === "poem"){
@@ -1145,18 +1161,30 @@ function renderChapter(ch){
     if (p.childNodes.length) page.appendChild(p);
   });
 
-  page.appendChild(el("div","close-mark","\u25c6"));
+  page.appendChild(el("div","close-mark"));   // glyph drawn in CSS, see .close-mark::before
 
   const col = el("div","colophon");
   /* The separator is only earned when something follows it. */
-  col.appendChild(document.createTextNode(ch.credit.name + (ch.credit.url ? " \u00b7 " : "")));
+  /* The whole colophon is drawn from data-t rather than written, so that
+     read-aloud stops at the last verse instead of reciting the licence. It
+     is still displayed, and safely so: Vigil's stylesheet is INLINE in this
+     file, so there is no separate stylesheet that could fail and leave a
+     required notice unshown. The link keeps a real href and gains an
+     aria-label, so it is a genuine link with a genuine accessible name
+     even though its visible text is generated. */
+  const cname = el("span","cname"); cname.dataset.t = ch.credit.name;
+  col.appendChild(cname);
   if (ch.credit.url){
-    const a = el("a", null, ch.credit.url.replace(/^https?:\/\//,"").replace(/\/$/,""));
+    col.appendChild(el("span","sep"));
+    const label = ch.credit.url.replace(/^https?:\/\//,"").replace(/\/$/,"");
+    const a = el("a");
+    a.dataset.t = label;
+    a.setAttribute("aria-label", label);
     a.href = ch.credit.url; a.target = "_blank"; a.rel = "noopener";
     col.appendChild(a);
   }
   if (ch.credit.note) ch.credit.note.split(/\n{2,}/).forEach(para => {
-    col.appendChild(el("p", null, para));
+    const n = el("p"); n.dataset.t = para; col.appendChild(n);
   });
   page.appendChild(col);
 
