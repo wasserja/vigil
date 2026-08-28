@@ -30,8 +30,40 @@ uppercase letterspaced headings. Keep that direction. If a change would make it
 look like a generic reading app, it's wrong.
 
 The chrome dissolves entirely after ~2.8s or on scroll-down, and returns on
-scroll-up or a tap. Text masks into black at the top and bottom edges rather
-than hitting a hard cut. **The reading surface is the product; UI is a guest.**
+scroll-up or a tap. Text fades into the page at the top and bottom edges
+rather than hitting a hard cut. **The reading surface is the product; UI is a
+guest.**
+
+### The document is the scroller (changed 2026-08-27)
+
+It used to be a fixed shell (`#app`) wrapping an `overflow:auto` reader, with
+`html,body{overflow:hidden}`. That is now inverted: the document itself
+scrolls, `#reader` is plain content, and everything that was `absolute` inside
+`#app` — chrome, progress, scrim, sheet — is `fixed` to the viewport.
+
+**This is not a refactor for its own sake.** iOS Safari and Android Chrome tie
+the URL bar to the ROOT scroller. A page whose scrolling happens in a nested
+element is structurally opted out of ever collapsing that bar, and no meta tag
+or script buys it back. Read in a browser tab, the old build permanently gave
+up ~60-100pt of screen. Installed to the home screen it made no difference,
+which is why it went unnoticed.
+
+Consequences to keep in mind when touching layout:
+
+- **Never put `overflow:hidden` back on `html`/`body`.** That single line
+  silently undoes the whole thing, and the symptom is subtle — the app looks
+  fine, it just stops reclaiming the bar.
+- **The edge fades are overlays, not a mask.** `.fade` is `position:fixed`,
+  pinned to the viewport, so it no longer depends on a scroll box resolving
+  its own height. This is exactly bottom-gap candidate 3.
+- **An open sheet freezes the page by hand** — `lockScroll()` records
+  `scrollY`, sets `body{position:fixed}` with a negative `top`, and
+  `unlockScroll()` restores it. Without the offset dance the reader jumps to
+  the top every time a sheet opens.
+- **Anything reading scroll position reads the window**, not `#reader`:
+  `updateProgress`, `landOn`, `redrawKeepScroll`, and the immersion listener.
+  `landOn` uses `getBoundingClientRect().top + scrollY` because `offsetTop` is
+  meaningless once `#page` is in normal flow.
 
 ## Architecture
 
@@ -143,6 +175,14 @@ Two more things the live API taught us, neither guessable from the docs:
   LAN address. `https://` or `localhost` only.
 - Deployment target is GitHub Pages at a **subpath** (`/vigil/`), which matters
   for service worker scope.
+- **Desktop browsers cannot hide their URL bar on scroll, at all.** Chrome,
+  Safari and Firefox on a desktop only surrender chrome to the Fullscreen API,
+  which needs a user gesture and shows its own overlay. So "full screen on
+  desktop" is not the same problem as on a phone and is not solved by the
+  scroll work above — it belongs with the larger-screens question.
+- The manifest still sets `"orientation": "portrait"`, which locks the
+  installed app even on an iPad. Deliberate for a phone; an open question if
+  tablets ever matter.
 
 ## Priorities
 
@@ -353,7 +393,21 @@ into a transcript, a commit, or this file. For local testing there is a copy
 at `~/.esv_api_key` (mode 600, outside the repo and outside the homelab
 backup allowlist); read it into a request, never echo it.
 
-## Open: the bottom gap (unresolved, 2026-08-26)
+## The bottom gap (2026-08-26; likely resolved 2026-08-27, NEEDS A DEVICE CHECK)
+
+**Status.** The scroll inversion above removed the mechanism this bug lived
+in: there is no longer a mask on an `overflow:auto` box, because there is no
+longer an inner scroller at all. The bottom fade is a fixed overlay pinned to
+the viewport, which was candidate 3 on the list below and was already judged
+"visually identical". So this is *probably* fixed as a side effect.
+
+**It has not been confirmed on hardware, and it must not be recorded as fixed
+until it is.** The measurements below stay because they were expensive to take
+and because a device check might still show the gap — in which case the
+correlation with the top safe-area inset, still unexplained, is the next
+thread to pull.
+
+The original report and workings follow.
 
 On an installed iOS app the reading column stops short at the bottom while
 the top runs clean to the screen edge. Roughly half an inch of dead page.
