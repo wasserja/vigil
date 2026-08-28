@@ -18,11 +18,19 @@
    scripture comes from IndexedDB inside the page, not from here.
    ══════════════════════════════════════════════════════════════ */
 
-/* Bump on release. Cache-busting is belt-and-braces here — the shell is
-   served stale-while-revalidate, so a new index.html lands on the second
-   launch even without a bump — but bumping makes it the FIRST launch and
-   drops the previous cache. */
-const VERSION = "vigil-v18";
+/* Bump on release.
+
+   It does NOT make the new build appear on the first launch — that claim
+   was here for a while and it is wrong, and it cost real debugging time.
+   The launch that notices a changed sw.js has ALREADY been served its HTML
+   from the old cache; the new worker installs, skipWaiting()s and claims
+   behind it, so the new build shows on the NEXT launch. What bumping
+   actually buys is a wholly fresh cache (install refetches the shell with
+   cache:"reload") and the removal of the old one in activate.
+
+   To skip the wait there is Settings → About → Update now, which calls
+   registration.update() and reloads into the new worker. */
+const VERSION = "vigil-v19";
 
 /* Relative so one worker serves both / (local) and /vigil/ (Pages). */
 const SHELL = [
