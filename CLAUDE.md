@@ -546,6 +546,15 @@ case that has to work.
   stylesheet, this trade collapses and the notice must go back to being a
   text node.**
 
+  **Generated content covers only one of the two extraction paths.** It
+  keeps text out of `innerText`, which is what desktop Read Aloud reads —
+  but Chromium exposes `::before` content to the ACCESSIBILITY TREE, and a
+  reader built on that tree speaks it anyway. So the running head, the `◆`
+  and the colophon separator also carry `aria-hidden="true"`: they are
+  decoration or duplicated in the chrome, so nothing is lost. Section
+  headings and the copyright notice are deliberately NOT aria-hidden — a
+  screen reader user should still get them.
+
   Each of these needs a separator in the text layer where the drawn element
   used to provide one, or the words on either side fuse. See the nbsp note
   below; the colophon has the same problem between the name and the link.

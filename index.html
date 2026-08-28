@@ -1104,6 +1104,13 @@ function renderChapter(ch){
      metadata, and it carries a U+00B7 that speech engines pronounce "dot". */
   const ref = el("p","ref-line");
   ref.dataset.t = `${ch.bookName} ${S.chapter} · ${S.translation}`;
+  /* Belt and braces. Generated content keeps this out of the page's TEXT,
+     which is what desktop Read Aloud extracts — but Chromium DOES expose
+     ::before content to the accessibility tree, and a reader built on that
+     tree speaks the U+00B7 as "dot" regardless. aria-hidden closes the
+     second path. Nothing is lost: the chrome already names the chapter, so
+     a screen reader is not denied anything it cannot get elsewhere. */
+  ref.setAttribute("aria-hidden", "true");
   page.appendChild(ref);
 
   const blocks = S.layout === "verse" ? toVerseLines(ch.blocks) : ch.blocks;
@@ -1192,7 +1199,9 @@ function renderChapter(ch){
     if (p.childNodes.length) page.appendChild(p);
   });
 
-  page.appendChild(el("div","close-mark"));   // glyph drawn in CSS, see .close-mark::before
+  const closeMark = el("div","close-mark");   // glyph drawn in CSS, see .close-mark::before
+  closeMark.setAttribute("aria-hidden", "true");   // pure ornament
+  page.appendChild(closeMark);
 
   const col = el("div","colophon");
   /* The separator is only earned when something follows it. */
@@ -1206,7 +1215,9 @@ function renderChapter(ch){
   const cname = el("span","cname"); cname.dataset.t = ch.credit.name;
   col.appendChild(cname);
   if (ch.credit.url){
-    col.appendChild(el("span","sep"));
+    const sep = el("span","sep");
+    sep.setAttribute("aria-hidden", "true");   // decorative punctuation, and a spoken "dot"
+    col.appendChild(sep);
     const label = ch.credit.url.replace(/^https?:\/\//,"").replace(/\/$/,"");
     const a = el("a");
     a.dataset.t = label;
