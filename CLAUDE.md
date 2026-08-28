@@ -460,6 +460,30 @@ period followed by a normal space and one followed by U+00A0 produce
 byte-identical audio, so the nbsp between verses is safe. The middle dot
 was the only offender, and it is gone from the text layer as of v11.
 
+## One run of prose is one text node
+
+A source may split a single verse across several runs for reasons that
+leave no trace in the output. BSB puts a footnote marker inside John 1:5 —
+`["...has not overcome", {"noteId":0}, "it."]` — and `fetchAO` drops the
+marker, leaving two adjacent runs that used to become two adjacent spans.
+
+That seam is a real liability, not just untidy DOM. **Edge's reader view
+took the orphaned `it.` and promoted it to the page's title**, above the
+chapter. The renderer now merges adjacent runs when nothing distinguishes
+them; words-of-Jesus runs still get their own span, because `.woc` has to
+be tintable.
+
+The same screenshots showed the `.vn` nbsp surfacing as a stray leading
+space at the start of each paragraph, since reader view drops the numeral's
+generated content but keeps the text node. The nbsp exists only to separate
+two verses inside one paragraph, so it is no longer emitted when the
+numeral is first in its paragraph.
+
+**These two are worth remembering as a pair: Vigil's DOM is read by more
+than Vigil.** Reader views and read-aloud engines extract it, and empty
+elements and orphan fragments confuse them in ways that are invisible in
+the app itself.
+
 ## Read aloud (built 2026-08-27)
 
 Vigil speaks for itself rather than relying on the browser to do it. The

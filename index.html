@@ -1169,28 +1169,48 @@ function renderChapter(ch){
              the line broke. The nbsp binds the numeral to the first word of
              its verse, which is what you want anyway. Its width replaces
              .vn's old margin-right — see the note there. */
-          vn.textContent = "\u00a0";
+          /* Only when something precedes it. The nbsp exists to keep two
+             verses in one paragraph from fusing in the text layer; first in
+             a paragraph there is nothing to separate, and emitting it there
+             shows up as a stray leading space wherever the numeral itself
+             is dropped — visible in Edge's reader view. */
+          if (p.childNodes.length) vn.textContent = "\u00a0";
           p.appendChild(vn);
         }
         afterMark = true;
       }
       if (run.t){
         const needsSpace = !afterMark && tail && !/[\s\u201c(]$/.test(tail) && !/^[\s.,;:!?)\u201d\u2019]/.test(run.t);
-        const t = el("span", run.woc ? "woc" : null);
-        t.textContent = (needsSpace ? " " : "") + run.t;
+        const piece = (needsSpace ? " " : "") + run.t;
         /* Wrap the TEXT of each verse — not the numeral, not the drop cap —
            so read-aloud can highlight exactly the verse being spoken. In
            paragraph layout a .pg holds many verses, so highlighting the
            paragraph would light up most of the screen. Leaving .vn and .cap
            as direct children keeps `.pg > .vn:first-child` and the cap's
            float working untouched; a bare inline span costs no layout. */
+        let host = p;
         if (curV != null){
           let vt = p.lastElementChild;
           if (!vt || !vt.classList.contains("vt") || vt.dataset.vt !== String(curV)){
             vt = el("span","vt"); vt.dataset.vt = String(curV); p.appendChild(vt);
           }
-          vt.appendChild(t);
-        } else p.appendChild(t);
+          host = vt;
+        }
+        /* Merge into the previous span when nothing distinguishes them.
+           A source may split one verse across several runs for reasons that
+           leave no trace in the output — BSB puts a footnote marker inside
+           John 1:5, and we drop the marker — and the leftover seam is a real
+           liability: Edge's reader view treated the orphaned "it." as the
+           page's title. One run of prose should be one text node. */
+        const prev = host.lastElementChild;
+        const sameKind = prev && prev.tagName === "SPAN" && !prev.classList.contains("vn")
+                         && prev.className === (run.woc ? "woc" : "");
+        if (sameKind) prev.textContent += piece;
+        else {
+          const t = el("span", run.woc ? "woc" : null);
+          t.textContent = piece;
+          host.appendChild(t);
+        }
         tail = run.t;
         afterMark = false;
       }
