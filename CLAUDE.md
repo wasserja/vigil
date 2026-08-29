@@ -955,6 +955,24 @@ What the live endpoint taught us, none of it guessable from the docs:
   client-side highlighting, so an unmatched phrase simply renders
   unhighlighted rather than wrongly.
 
+**Open: relevance order vs canonical, unresolved on purpose (2026-08-29).**
+The offline search walks saved books in canonical order, so its results
+read Genesis to Revelation. This one cannot: its set is a ranked fuzzy
+match and the ranking is what makes a 5,102-hit query useful at all. But
+the two are not the same kind of query. "goodness" is loose and needs the
+ranking; "sacrifice" appears literally in hundreds of verses, nearly every
+hit is true, and Bible order would read better — down through Leviticus,
+the prophets, then Hebrews. Jason noticed exactly this and chose to live
+with relevance for a while first.
+
+If it keeps grating, the fix is **let relevance choose WHICH verses come
+back, then display them canonically** — still the 200 best matches rather
+than 200 arbitrary ones, but in Bible order, matching the offline sheet.
+About ten lines. The cost is that "Load more" reshuffles rather than
+appends, since newly fetched lower-ranked hits slot in among those already
+shown. A sort toggle is the other option and is worse: another control in
+an app whose whole argument is that it has very few.
+
 Two things paging must get right, both learned by breaking them: the
 offset advances by what the SERVER returned, not by how many hits
 survived parsing, or a dropped hit stalls "Load more" short of `total`
