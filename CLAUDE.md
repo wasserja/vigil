@@ -218,9 +218,11 @@ Two more things the live API taught us, neither guessable from the docs:
    any code, because if Microsoft's neural voices are listed there, Vigil's
    own Listen already sounds as good and much of this evaporates. See
    "Reading layout and listening layout".
-2. **Modern translations — NIV, NASB, The Message.** Via an API.Bible
-   adapter; see "Wanted: NIV, NASB, The Message". Register for their free
-   Starter tier and confirm those three are selectable *before* any code.
+2. ~~**Modern translations — AMP, MSG, NLT.**~~ **Done 2026-08-29**, v21.
+   Third source adapter, key in hand, parser written against live responses
+   from all three publishers. See "Modern translations via API.Bible".
+   Still open there: **search does not cover them**, which is the next
+   piece, and offline is off pending a 30-day expiry.
 3. Hebrew and Greek. Scouted, further out.
 4. **Desktop full screen.** All that is left of the larger-screens item
    below, now that the layout part is done — and it is a separate problem,
@@ -600,46 +602,273 @@ period followed by a normal space and one followed by U+00A0 produce
 byte-identical audio, so the nbsp between verses is safe. The middle dot
 was the only offender, and it is gone from the text layer as of v11.
 
-## Wanted: NIV, NASB, The Message — via API.Bible
+## Modern translations via API.Bible — AMP, MSG, NLT
 
-Scouted 2026-08-27. These are commercially licensed and are **not** on
-HelloAO, which carries 51 English translations, all public domain or
-freely licensed, and none of these. There is no back door: the route is a
-licence.
+Scouted 2026-08-27, terms verified 2026-08-29. These are commercially
+licensed and are **not** on HelloAO, which carries 51 English translations,
+all public domain or freely licensed, and none of these. There is no back
+door: the route is a licence.
 
-**API.Bible (American Bible Society) is that route.** It carries NIV,
-NASB, The Message, NLT, NKJV, CSB, Amplified and GNT under one agreement,
-via publisher partnerships with Biblica, Lockman, HarperCollins, Tyndale
-and others. Plans, read off their pricing page:
+**API.Bible (American Bible Society) is that route.** Its own front page
+features NIV, NASB, CSB, NKJV, NLT, GNT, Amplified, The Message and KJV,
+under one agreement via publisher partnerships with Biblica, Lockman,
+HarperCollins, Tyndale and others.
 
-- **Starter — $0.** Creative Commons and public-domain Bibles, plus (per
-  their docs) a choice of **up to 3 licensed Bibles for non-commercial
-  use**. **5,000 API calls per MONTH**, no overage protection.
+- **Starter — $0.** All Creative Commons and public-domain Bibles, plus
+  **up to 3 licensed Bibles**, non-commercial only. **5,000 API calls per
+  MONTH**, no overage protection.
 - **Pro — $29+/month** for copyrighted Bibles generally; individual
   commercial licences from $10/month per translation.
 - "Strictly non-commercial use. No ads, fees, freemium models or upsells."
+  Their terms define non-commercial as no ads, revenue, paid subscriptions
+  or in-app purchases; a modest donation link is tolerated by exception.
   Vigil qualifies today and would have to keep qualifying.
-- Note in their own footnote: *NIV commercial use is not available.*
+- Their own footnote: *NIV commercial use is not available.* Non-commercial
+  NIV appears to be in scope, but see the open question below.
 
-**The call budget is the thing to design around, and it is tight.**
-Crossway gives 5,000 a *day*; API.Bible's free tier gives 5,000 a *month*
-— about 165 chapter loads a day, and `prefetchNeighbours` spends 2-3 calls
-per turn. Copyrighted text also cannot be stored, so there is no offline
-path to take the pressure off: every read is a call. Prefetch may need to
-be off for these translations.
+### What was verified on 2026-08-29
 
-**Before writing any code:** register for Starter, confirm those three are
-actually among the selectable licensed Bibles, and read their caching and
-attribution rules. Neither was verifiable from the public pages, and both
-shape the adapter — the ESV taught us that the terms are where the real
-design constraints live, not the docs.
+**1. It works from the browser — no server needed.** This was the real
+architectural risk and it is cleared. A live preflight against
+`api.scripture.api.bible/v1/bibles` from origin `https://wasserja.github.io`
+returned `access-control-allow-origin: https://wasserja.github.io` and
+`access-control-allow-headers: Content-Type,api-key`. So the key rides in
+an `api-key` header exactly as the ESV key rides in `Authorization`, and
+the same "your key, stored locally, never ours" arrangement carries over.
 
-Architecturally this is the **third source adapter**, which the block
-contract already anticipates: emit `{blocks, bookName, chapters, credit}`
-and change no rendering path. One adapter would unlock the whole catalogue
-at once, so the work is per-source, not per-translation. Offline download
-must be disabled for licensed texts, exactly as it is for the ESV, and
-each publisher will have its own required notice for `credit.note`.
+**2. Caching is ALLOWED, and this reverses an earlier assumption.** The
+2026-08-27 note said copyrighted text "cannot be stored, so there is no
+offline path". That is the ESV's rule, not this one. API.Bible's terms
+require only that cached content be **refreshed at least every 30 days**
+and never be more than 30 days out of date; printing, separately, is
+capped near 100 verses. So a **30-day-expiry cache is not merely permitted
+but necessary** — with 5,000 calls a month against Crossway's 5,000 a day,
+caching is what makes the budget survivable, and prefetch stops being the
+thing to switch off and becomes something to spend deliberately.
+
+**3. FUMS is mandatory, and it is the one genuinely unwelcome term.**
+"Any webapp must implement FUMs in order to use API.Bible, unless
+otherwise prohibited by law." The Fair Use Management System is a usage
+beacon: add `fums-version=3` to each call, take `meta.fumsToken` off the
+response, and report it — either through their script at
+`https://pkg.api.bible/fumsV3.min.js` calling `fums('trackView', token)`,
+or, for non-JS environments, by fetching
+`https://fums.api.bible/f3?t=<token>&dId=<deviceId>&sId=<sessionId>`
+directly, which an app may issue itself as a plain request or image.
+
+This matters more here than it would in most apps. Vigil today talks to
+exactly one host per translation and reports nothing about who is reading
+what. FUMS is a per-chapter-read beacon carrying a device id and a session
+id. **Take the manual `f3` URL, not the CDN script** — it keeps the file
+single, adds no third-party JavaScript to the page, sends only what the
+endpoint requires, and stays inspectable in one place. It should also be
+scoped to API.Bible chapters only: the HelloAO and ESV paths must remain
+beacon-free. If read-aloud ever covers these texts, that is
+`fums('trackListen', …)`, a separate report.
+
+**4. Starter attribution is heavier than Pro's.** Starter users must carry
+"a visible citation and hyperlink" to api.bible — the platform, on top of
+each publisher's own required notice. Per-Bible the API returns the name,
+abbreviation, IP-holder information and a link in its metadata, and the
+terms require the abbreviation and the holder's link on the page showing
+the text. That maps cleanly onto what already exists: publisher notice to
+the `Copyright` group on the translation sheet, abbreviation and link to
+the chapter colophon via `credit.name` / `credit.url`, and the api.bible
+citation alongside them.
+
+### Settled 2026-08-29: the account, and what the key reaches
+
+Registered for Starter. **The pick is three licensed Bibles, and three is
+the whole allowance** — NIV and NASB were both on the menu and both were
+passed over, because five were wanted and only three could be had. The
+chosen three are **AMP, MSG and NLT**. NIV and NASB remain gettable, but
+only by giving one of these up, or by going to Pro.
+
+Verified against the live key: 251 Bibles, 40 English entries. Nothing
+resembling NIV or NASB appears anywhere in the catalogue — the only
+near-miss on the name is `ASV`, the public-domain 1901 American Standard
+Version, which is not the NASB.
+
+**Editions come as a family and do not each cost a pick.** One NLT
+selection yields three ids: `NLT` (`d6e14a625393b4da-01`), `NLTCE`
+(Catholic Edition) and `NLTUK` (Anglicised). The reader wants plain NLT.
+
+The list also repeats ids — `WEB` appears four times, `KJV` twice — so the
+picker must **dedupe by `id`**, not by name.
+
+The key is at `~/.apibible_api_key`, mode 600, outside the repo and
+outside the homelab backup allowlist, exactly as `~/.esv_api_key` is.
+
+### What the content actually looks like
+
+USX-style JSON, and it is a far better starting point than the ESV's plain
+text: structure arrives as data instead of as indentation to be measured.
+Request with `content-type=json`. Observed styles, Isaiah 40 and John 3 in
+The Message:
+
+- `para` styles → the block contract, almost one-to-one: `ms1`/`s1`/`s2` →
+  `heading`, `q1`/`q2` → `poem` at indent 1 and 2, `p`/`m` → prose, `b` →
+  paragraph break, `d` → `sub`.
+- `char` styles → inline detail: `nd` is the divine name in small caps
+  (ten of them in Isaiah 40), `it` italics. `wj` is the words-of-Jesus
+  hook that `woc` already expects — **The Message does not mark it**;
+  John 3 carries none. Do not assume `woc` is populated per translation.
+- Each chapter payload carries its own `copyright`, and the Bible metadata
+  carries `info` with the publisher's link. So `credit.note` and
+  `credit.url` build from the response — no table to maintain. The Message
+  is NavPress, represented by Tyndale.
+
+### The merged verse markers — the third parser lesson
+
+**The Message merges verses, and the API reports the merge.** This is the
+one thing in the payload that the app is not already shaped for:
+
+```
+Isaiah 40:  1-2, 3-5, 6-8, 9-11, 12-17, 18-20, 21-24, 25-26, 27-31
+John 3:     1-2, 3, 4, 5-6, 7-8, … 27-29a, 29b-30, 31-33, 34-36
+```
+
+Nine "verses" in the whole of Isaiah 40. Note `29a` and `29b-30`: partial
+verses with letter suffixes, which are not numbers at all.
+
+Everything downstream assumes `v` is an integer — the hung numerals in the
+gutter, verse anchoring, and search result references. So `v` becomes a
+**string**, and the gutter has to tolerate `12-17` where it was built for
+`12`. This is a Message-specific accommodation; AMP and NLT are expected
+to number conventionally, and that expectation should be checked against
+live data rather than trusted.
+
+### Parked: a DBL key from library.bible
+
+Noted 2026-08-29 during account setup — API.Bible's own signup mentions
+that a **Digital Bible Library** key from `library.bible` can be added
+alongside the API.Bible one. **Deliberately not researched yet**; this is
+a pointer, not a finding, and nothing below has been verified.
+
+The DBL is understood to be the upstream repository the Bible societies
+and publishers deposit texts into — the library API.Bible itself draws
+from — which is why it is worth a look: it may reach translations and
+languages the API.Bible catalogue does not surface, and it is the same
+account setup either way. Against that, access has historically been
+arranged for rights-holders and licensed distributors rather than handed
+to individual developers, so the first question is simply whether a
+person can hold a key at all.
+
+When it comes up, the questions in order:
+
+1. **Can an individual get a key**, or does it require an organisational
+   agreement? If the latter, this ends here.
+2. **What does it carry that API.Bible does not** — and specifically,
+   does it change the NIV / NASB / Message answer?
+3. **Its own terms**: caching, attribution, and whether it has anything
+   like FUMS. Assume nothing carries over from API.Bible.
+4. **Response shape.** If it is a fourth source with a fourth format,
+   that is a fourth adapter, and the value has to justify it.
+
+### Built 2026-08-29 — the third source adapter
+
+Shipped in v21. Architecturally it is what the block contract always
+anticipated: `fetchAB` emits `{blocks, bookName, chapters, credit}` and no
+rendering path changed to accommodate it. One adapter, whole catalogue.
+
+**Translation ids carry their source.** API.Bible translations are stored
+as `ab:<bibleId>` — `isAB()` reads the source off the id, HelloAO ids stay
+bare, and the ESV stays the literal string it has always been. The
+alternative, a parallel `S.source` field, puts the source and the id in two
+places that can disagree, and `chapterCache` is keyed on the id alone.
+
+**The picker is read from the key, not written into the app.** This is the
+real difference from the ESV, where every key sees the same text. Here the
+three licensed Bibles are chosen in API.Bible's dashboard, so a reader
+bringing their own key brings their own three. `abFetchBibles` calls
+`/v1/bibles`, filters to English and **dedupes by id** — the list repeats,
+WEB four times and KJV twice. The catalogue fetch is deliberately NOT
+awaited in `drawTranslations`: the free translations below must not wait on
+a network call to a service the reader may not use.
+
+`S.abAbbr` exists because the header tag shows `S.translation`, and an
+API.Bible id is a 16-hex string, which is no kind of label.
+
+**FUMS, and why it is the manual URL.** Reporting each chapter read is a
+licence condition, not analytics we chose — it is how the American Bible
+Society accounts to Biblica, NavPress and the rest for texts it does not
+own. `reportFums` builds the `f3` URL itself rather than loading their
+`fumsV3.min.js`. Vigil is one file with no third-party script in it, and a
+CDN script is behaviour that can change without a deploy of ours. Verified
+live: the endpoint answers 200 with a tracking gif, so `mode:"no-cors"` is
+correct and the opaque response is expected. A failed report must never
+take a chapter down with it, hence the swallowed catch. **The ESV and
+HelloAO paths report nothing, and must stay that way.**
+
+The device id (`S.abDev`) is random and carries no identity. It exists so a
+publisher can tell one reader reading fifty chapters from fifty readers
+reading one, which is the number they are owed.
+
+### What the parser learned from live data
+
+Written against real responses from all three publishers, and every one of
+these was found that way rather than in the docs:
+
+- **`qa` is a heading, not poetry.** It is the acrostic Hebrew letter over
+  each stanza of Psalm 119 — 22 of them in the NLT — and it begins with `q`,
+  so it falls through to the poetry branch and is read as a line of the
+  psalm unless caught first. The ESV parser hit the identical trap from the
+  other direction; the two now agree these are headings.
+- **A whitespace-only text node can precede the verse tag.** The NLT opens
+  every Psalm 119 line with one. Emitted, it becomes a stray run that
+  indents the line by a space.
+- **A run carrying a verse marker must not also carry a leading space.**
+  The numeral contributes an nbsp, and the renderer only suppresses a space
+  it would have ADDED — one already inside the text survives and doubles
+  the gap. Live on John 3:27 in The Message.
+- **One `para` is one block.** Without an explicit flush, consecutive `q1`
+  lines merge and the stanza loses its line breaks.
+- **`wj` is not populated everywhere.** The Message marks no words of
+  Jesus at all — John 3 carries none. Do not assume `woc` is per-translation
+  reliable.
+
+Deliberately left alone: `nd` (divine name) and `sc` (small caps) are
+flattened to text, since the run contract has no small-caps flag. And the
+**Amplified's bracketed cross-references** (`[Ezek 34:11-31]`) sit in the
+same text node as scripture, so they cannot be dropped structurally — only
+by regex, which would risk eating the amplification brackets that are the
+whole point of that translation. They stay. Editing a publisher's text is
+also the sort of thing their licence exists to forbid.
+
+### Merged verses, and the hanging indent
+
+The Message merges verses and the API reports the merge: nine "verses" in
+Isaiah 40, and markers like `27-29a` / `29b-30` that are not numbers at
+all. `v` is therefore a **string** end to end.
+
+The consequence is typographic. `.poem` hangs its opening numeral in the
+padding, and that hang was cut at `-.9em` — right for `1`, `12` and `119`,
+too narrow for `12-17`, which puts the line's first word inside the
+numeral. The hang is now `calc(var(--vw,3) * -.3em)`, where `--vw` is the
+marker's length in characters, set by the renderer on **poem lines only,
+and only where the numeral actually opens the line**. Markers of three
+characters or fewer leave `--vw` unset and land on the original `.9em`, so
+nothing about the free translations moved.
+
+### Not built yet, and honest about it in the UI
+
+- **Search does not cover these translations.** It reads books saved on the
+  device and these are not saved, so the usual "download a book" advice
+  would point at a button that is switched off. The sheet says so plainly
+  and disables the field. API.Bible has a search endpoint; wiring it is the
+  obvious next piece, and it is the ESV's shape — spend a call, page the
+  results.
+- **Offline download is off**, though unlike the ESV it is *permitted*. A
+  saved chapter would have to expire within 30 days and that expiry is not
+  built. Keeping text past its licence because the expiry was "obviously
+  fine" is exactly the failure to avoid, so the button stays off and the
+  row says why.
+- **The first chapter of a Bible costs two calls**, not one: the chapter,
+  then `/v1/bibles/{id}` for the publisher's link. Metadata is cached in
+  memory and in `Store` (`abm:<id>`) and never fetched again. Against 5,000
+  calls a MONTH this is worth remembering — `prefetchNeighbours` still
+  spends 2-3 per turn, and it is the next thing to reconsider if the
+  budget bites.
 
 ## Someday: Hebrew and Greek, and searching the originals
 
