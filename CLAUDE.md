@@ -223,8 +223,11 @@ Two more things the live API taught us, neither guessable from the docs:
    from all three publishers. See "Modern translations via API.Bible".
    Still open there: **search does not cover them**, which is the next
    piece, and offline is off pending a 30-day expiry.
-3. Hebrew and Greek. Scouted, further out.
-4. **Desktop full screen.** All that is left of the larger-screens item
+3. **Microsoft's neural voices — Ava, and the rest.** Wanted 2026-08-29.
+   Item 1 above is the free half of this same question and must be settled
+   first. See "Microsoft neural voices: Ava, Edge and Azure".
+4. Hebrew and Greek. Scouted, further out.
+5. **Desktop full screen.** All that is left of the larger-screens item
    below, now that the layout part is done — and it is a separate problem,
    not a layout one. See "Known constraints".
 
@@ -909,6 +912,76 @@ viewport-unit handling. The phone remains the last word.
   calls a MONTH this is worth remembering — `prefetchNeighbours` still
   spends 2-3 per turn, and it is the next thing to reconsider if the
   budget bites.
+
+## Microsoft neural voices: Ava, Edge and Azure
+
+Wanted 2026-08-29. Ava is one of Microsoft's neural voices
+(`en-US-AvaNeural`, and an Ava Multilingual variant), and it is the sound
+Jason is actually after. There are two ways to it and they are not equally
+good — **the cheap one has to be ruled out before the expensive one is
+even scoped.**
+
+### First: it may already be free, and this is priority 1 above
+
+Edge exposes Microsoft's cloud "Online (Natural)" voices to ordinary web
+pages through `speechSynthesis`, which is the same API Vigil's Listen
+button already drives. If Ava appears in `speechSynthesis.getVoices()`,
+**there is nothing to build**: the existing voice picker lists it, the
+existing Listen button speaks it, no key, no account, no per-character
+cost, and no text leaves for anywhere Vigil chose to send it.
+
+So the first move is not code. It is opening Settings → Read aloud →
+Voice in Edge and reading the list.
+
+Two things to expect while checking, neither of them a reason to give up:
+
+- **Platform matters more than the browser's name.** Edge on Android is
+  Chromium and is the plausible case. **Edge on iOS is not Edge** — every
+  iOS browser is WebKit underneath, so it gets Apple's voices, and the
+  Microsoft neural voices will not be there. The Natural voices are also
+  documented mostly against Windows; macOS and Android coverage is the
+  unverified part.
+- **A known Edge bug** returns every natural voice as `Microsoft undefined
+  Online (Natural) - undefined` from `getVoices()`. If the picker looks
+  broken rather than empty, that is this, not Vigil.
+
+### Second: Azure AI Speech, if Edge will not give them up
+
+Same voices, sold directly. This is a real project, not a switch.
+
+- **Cost.** Free tier is 500,000 characters and 5 audio hours a month;
+  beyond that, standard neural is about $16 per million characters (Neural
+  HD around $22). For scale: a typical chapter is a few thousand
+  characters and Psalm 119 is roughly twenty thousand, so the free tier is
+  on the order of a hundred chapters a month — the same shape of budget as
+  API.Bible's 5,000 calls, and it wants the same care.
+- **A key that costs money changes the bargain.** The ESV and API.Bible
+  keys are free-tier and rate-limited; the worst an exposed one does is
+  exhaust a quota. An Azure Speech key is metered spend. Azure's answer is
+  short-lived tokens minted by a token endpoint — **which needs a server,
+  and Vigil does not have one and should not grow one**. So it would have
+  to be the reader's own key, held locally, with real financial exposure
+  behind it. That is a materially worse deal than the two Bible keys and
+  must be said plainly in the UI if it is ever built.
+- **Sending licensed text to a third party is a licensing question, not a
+  billing one.** Synthesising a chapter means transmitting it to
+  Microsoft. For the public-domain HelloAO texts that is nobody's problem.
+  For the **ESV, and now for AMP, MSG and NLT**, it is exactly the kind of
+  use Crossway's and API.Bible's terms circumscribe, and neither has been
+  read with this in mind. Read them before writing the request, not after.
+  The safe first version is **public-domain translations only**.
+- **Audio of licensed text cannot be cached** any more than the text can,
+  which removes the obvious way to make the character budget survivable.
+
+### The order, then
+
+1. Check Edge's voice list. If Ava is there, this is finished and costs
+   nothing.
+2. If it is not: the Azure path is public-domain translations only until
+   the ESV and API.Bible terms have been read specifically on the question
+   of transmitting text to a synthesis service.
+3. Only then the key handling, and it needs its own warning in the sheet,
+   because unlike the other two keys this one spends money.
 
 ## Someday: Hebrew and Greek, and searching the originals
 
