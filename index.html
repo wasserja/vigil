@@ -1935,10 +1935,26 @@ async function searchESV(key, q, page){
    is present on a search response too, confirmed live, and it gets the
    same reportFums() call -- a search is still a licensed read.
 
-   Default order is BY RELEVANCE, confirmed live (a plain "love" query
-   opened on Song of Songs 7, not Genesis). `sort=canonical` is a real
-   parameter and puts results back in Bible order, which is what makes
-   Load More traversable rather than jumping every page.
+   **Do NOT pass `sort=canonical`.** It is a real parameter and it was
+   used here at first, on the reasoning that Bible order makes "Load more"
+   traversable rather than jumping about. That was wrong, and badly so:
+   this is a FUZZY, STEMMED search engine, not a word match. A search for
+   "goodness" in the NLT matches 5,102 verses — every verse containing
+   "good" and much else besides — ranked so the top of the list is
+   genuinely apt (Mark 10:18, "no one is good except God alone"). Sorting
+   that set canonically throws the ranking away and hands back page after
+   page of Genesis 1:1 onward. Relevance order is the only thing making
+   the result set mean anything, so it is left at the default.
+
+   `fuzziness=0` is passed, which is undocumented but real and worth
+   having: it drops the same NLT query from 5,102 hits to 769 with equally
+   apt results at the top. It tightens character-level fuzziness; it does
+   NOT stop stemming.
+
+   **Stemming is why a result can arrive unhighlighted.** "goodness"
+   matches verses reading "good", so `highlight()` finds nothing to mark.
+   That is the API behaving correctly and the highlighter behaving
+   correctly — do not "fix" either.
 
    `verseCount` in the response is not trustworthy: at offset 600 of 681
    total it echoed the LIMIT (100) rather than the 81 verses actually
@@ -1975,7 +1991,7 @@ function abRefFromId(id){
 
 async function searchAB(key, bibleId, q, offset){
   const params = new URLSearchParams({
-    query: q, limit: AB_PAGE_SIZE, offset, sort: "canonical", "fums-version": "3"
+    query: q, limit: AB_PAGE_SIZE, offset, fuzziness: "0", "fums-version": "3"
   });
   const res = await fetch(`${AB}/bibles/${encodeURIComponent(bibleId)}/search?${params}`, {
     headers: { "api-key": key.trim() }
@@ -2586,7 +2602,8 @@ function drawSearch(body){
     "your query is sent to them. Searching a saved book never leaves the phone." }));
   if (isABt) wrap.appendChild(Object.assign(el("div","note"), { textContent:
     "This translation can't be stored on the device yet, so it is searched at " +
-    "API.Bible and your query is sent to them. Searching a saved book never leaves the phone." }));
+    "API.Bible and your query is sent to them. Searching a saved book never leaves the phone. " +
+    "Their search matches related words too — “goodness” finds “good” — and ranks the closest first." }));
 
   const status = el("div","scount");
   const list = el("div","results");
@@ -2735,8 +2752,12 @@ function drawABSearch(input, status, list){
     for (const h of abSearch.hits) frag.appendChild(resultRow(h, parsed));
     list.appendChild(frag);
     const shown = abSearch.hits.length;
+    /* "best matches first" is not decoration: this engine stems and ranks,
+       so a large total with only the head shown is the normal case, and
+       saying so is what stops "showing the first 200 of 5,102" reading as
+       a truncation bug. */
     status.textContent = `${abSearch.total} verse${abSearch.total === 1 ? "" : "s"}` +
-      (shown < abSearch.total ? ` · showing the first ${shown}` : "");
+      (shown < abSearch.total ? ` · best matches first, showing ${shown}` : "");
     /* Gated on the server-side offset, not hits.length -- a dropped hit
        (see searchAB) must not leave Load More stuck offering a page that
        can never add anything. */

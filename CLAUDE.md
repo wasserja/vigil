@@ -924,9 +924,25 @@ What the live endpoint taught us, none of it guessable from the docs:
   exactly** — `JHN.3.27-JHN.3.29a` in search is `number: "27-29a"` in the
   chapter. That is why `resultRow`, `open()` and `landOn` needed no
   changes: they already treat `v` as an opaque string.
-- **Default order is by RELEVANCE, not canonical** — a plain `love` query
-  opens on Song of Songs. `sort=canonical` is real and is used, because
-  without it "Load more" jumps unpredictably between pages.
+- **This is a FUZZY, STEMMED engine, not a word match — and that governs
+  everything else.** "goodness" in the NLT matches 5,102 verses: every one
+  containing "good", and more. The ranking is what makes that set useful;
+  the head of it is genuinely apt (Mark 10:18, "no one is good except God
+  alone").
+- **`sort=canonical` was shipped in v22 and was a bug.** It is a real
+  parameter, and it was chosen so "Load more" would page in Bible order
+  rather than jump about. But sorting a 5,102-hit fuzzy set canonically
+  throws the ranking away: Jason searched "goodness" in the NLT and got
+  Genesis 1:1 onward, page after page. **Leave the sort at its default.**
+  Relevance order is the only thing making these results mean anything.
+- **`fuzziness=0` is undocumented but real and worth passing** — it takes
+  that same NLT query from 5,102 hits to 769, with equally apt results at
+  the top. It tightens character-level fuzziness; it does not stop
+  stemming.
+- **A result can legitimately arrive unhighlighted.** "goodness" matches
+  verses reading "good", so `highlight()` finds nothing to mark. The API
+  and the highlighter are both behaving correctly; do not "fix" either.
+  The search sheet says plainly that related words match.
 - **`verseCount` lies on a partial page.** At offset 600 of 681 it echoed
   the *limit* rather than the 81 verses actually returned. Count
   `data.verses.length`.
