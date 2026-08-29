@@ -875,6 +875,12 @@ const AB = "https://api.scripture.api.bible/v1";
    stays the literal string it has always been. */
 const AB_TAG = "ab:";
 const isAB = tid => typeof tid === "string" && tid.startsWith(AB_TAG);
+/* What the translation is CALLED on screen. HelloAO ids are already the
+   abbreviation ("BSB"), and so is "ESV"; an API.Bible id is a 16-hex string,
+   which is no kind of label. Every place that shows the translation goes
+   through here -- the header tag and the reference line both leaked the raw
+   id when they each rolled their own. */
+const transLabel = () => isAB(S.translation) ? (S.abAbbr || "\u2014") : S.translation;
 /* Their Fair Use Management System. Reporting a read is a condition of
    the licence, not analytics we chose -- see the API.Bible section of
    CLAUDE.md. */
@@ -1444,7 +1450,7 @@ function renderChapter(ch){
      metadata, and it carries a U+00B7 that speech engines pronounce "dot". */
   if (!plain){
   const ref = el("p","ref-line");
-  ref.dataset.t = `${ch.bookName} ${S.chapter} · ${S.translation}`;
+  ref.dataset.t = `${ch.bookName} ${S.chapter} · ${transLabel()}`;
   /* Belt and braces. Generated content keeps this out of the page's TEXT,
      which is what desktop Read Aloud extracts — but Chromium DOES expose
      ::before content to the accessibility tree, and a reader built on that
@@ -2136,10 +2142,7 @@ function syncChrome(){
   const name = (byId[S.book] || {}).name || S.book;
   $("#btn-passage").innerHTML = "";
   $("#btn-passage").append(document.createTextNode(`${name} ${S.chapter} `), Object.assign(document.createElement("small"), { textContent:"▾" }));
-  /* HelloAO ids ARE the abbreviation ("BSB"), and so is "ESV". An
-     API.Bible id is a 16-hex string, which is no kind of label -- carry the
-     abbreviation on the state instead. */
-  $("#btn-trans").textContent = isAB(S.translation) ? (S.abAbbr || "\u2014") : S.translation;
+  $("#btn-trans").textContent = transLabel();
 
   for (const [id, dir] of [["#btn-prev",-1],["#btn-next",1]]){
     const n = step(S.book, S.chapter, dir);
@@ -2428,7 +2431,7 @@ function drawSettings(body){
 
   group("Translation");
   const tr = el("div","row");
-  tr.append(el("div","lbl", S.translationName || S.translation));
+  tr.append(el("div","lbl", S.translationName || transLabel()));
   const chg = el("button","pillbtn","Change");
   chg.onclick = () => openSheet("translations");
   tr.appendChild(chg);
@@ -2647,15 +2650,51 @@ function pickAB(b){
 /* Everything the key can reach, in English, deduped -- the list repeats ids
    (WEB appears four times, KJV twice), so identity is the id and nothing
    else. */
+/* The free list, fetched once and shared. It is also what the API.Bible
+   list is filtered against, so both need the same answer. */
+let aoPromise = null;
+function aoTranslations(){
+  return aoPromise || (aoPromise = fetch(`${AO}/api/available_translations.json`)
+    .then(r => r.json())
+    .then(data => (data.translations || data || [])
+      .filter(t => (t.language === "eng" || t.languageEnglishName === "English"))
+      .sort((a, b) => (a.englishName||a.name).localeCompare(b.englishName||b.name)))
+    .catch(() => [{ id:"BSB", name:"Berean Standard Bible", englishName:"Berean Standard Bible", licenseNotes:"public domain" }]));
+}
+
 async function abFetchBibles(key){
   const res = await fetch(`${AB}/bibles`, { headers: { "api-key": key.trim() } });
   if (res.status === 401 || res.status === 403) throw new Error("badkey");
   if (!res.ok) throw new Error(`${res.status}`);
-  const seen = new Map();
+  /* Their catalogue carries no flag saying which Bibles are the licensed
+     ones -- the three picked in the dashboard look exactly like the 37
+     public-domain texts beside them. But HelloAO already gives most of
+     those away free, cacheable and searchable, so anything with a matching
+     abbreviation is dropped: reading it through the key would spend a
+     metered call on text that is free below, and offer no search and no
+     offline copy in exchange. What is left is what the key actually ADDS. */
+  /* Matched on id AND shortName, because HelloAO's id is often `eng_kjv`
+     while the abbreviation a reader recognises lives in shortName. Exact
+     matches only, deliberately: a fuzzy name match would eventually hide a
+     LICENSED translation behind a similarly-named free one, and a missing
+     row is a far worse failure here than a duplicated one. */
+  const free = new Set();
+  for (const t of await aoTranslations()){
+    if (t.id) free.add(String(t.id).toUpperCase());
+    if (t.shortName) free.add(String(t.shortName).toUpperCase());
+  }
+  const seen = new Map(), byAbbr = new Set();
   for (const b of (await res.json()).data || []){
     if (!b || !b.id || seen.has(b.id)) continue;
     if ((b.language && b.language.id) !== "eng") continue;
-    seen.set(b.id, { id:b.id, name:b.name || b.id, abbr:b.abbreviationLocal || b.abbreviation || "" });
+    const abbr = b.abbreviationLocal || b.abbreviation || "";
+    const up = abbr.toUpperCase();
+    if (free.has(up)) continue;
+    /* The list also repeats a translation under two ids -- two Berean
+       Standard Bibles, four World English Bibles. One row each. */
+    if (up && byAbbr.has(up)) continue;
+    if (up) byAbbr.add(up);
+    seen.set(b.id, { id:b.id, name:b.name || b.id, abbr });
   }
   return [...seen.values()].sort((x, y) => x.name.localeCompare(y.name));
 }
@@ -2748,7 +2787,8 @@ async function drawTranslations(body){
 
     const note = el("div","note");
     note.appendChild(document.createTextNode(
-      "Read live from API.Bible. Licensed text, so it isn't saved for offline reading. "));
+      "Read live from API.Bible. Licensed text, so it isn't saved for offline reading. " +
+      "Translations that are already free below aren't repeated here. "));
     const chg = el("button","linkish","Change key");
     chg.onclick = () => { abKeyOpen = true; drawSheet(); };
     note.appendChild(chg);
@@ -2853,15 +2893,7 @@ async function drawTranslations(body){
   if (!translations){
     const load = el("div","state"); load.appendChild(el("div","spin"));
     list.appendChild(load);
-    try {
-      const res = await fetch(`${AO}/api/available_translations.json`);
-      const data = await res.json();
-      translations = (data.translations || data || [])
-        .filter(t => (t.language === "eng" || t.languageEnglishName === "English"))
-        .sort((a,b) => (a.englishName||a.name).localeCompare(b.englishName||b.name));
-    } catch (_){
-      translations = [{ id:"BSB", name:"Berean Standard Bible", englishName:"Berean Standard Bible", licenseNotes:"public domain" }];
-    }
+    translations = await aoTranslations();
     if (sheetView !== "translations") return;
     list.innerHTML = "";
   }
@@ -2985,6 +3017,11 @@ function save(){
   saveTimer = setTimeout(() => {
     Store.set("settings", {
       translation:S.translation, translationName:S.translationName, esvKey:S.esvKey,
+      /* abDev belongs here with the keys, not with the look-and-feel: a
+         device id that regenerates every launch would report one reader as
+         a new reader each time, which is the opposite of what FUMS is
+         counting. */
+      abKey:S.abKey, abAbbr:S.abAbbr, abDev:S.abDev,
       theme:S.theme, bookOrder:S.bookOrder, lum:S.lum, warm:S.warm, fs:S.fs, lh:S.lh, measure:S.measure,
       face:S.face, verses:S.verses, layout:S.layout, woc:S.woc,
       awake:S.awake, autohide:S.autohide,

@@ -850,6 +850,46 @@ and only where the numeral actually opens the line**. Markers of three
 characters or fewer leave `--vw` unset and land on the original `.9em`, so
 nothing about the free translations moved.
 
+### What the browser pass found (2026-08-29)
+
+Playwright drives WebKit at an iPhone 13 viewport in dark mode against a
+local `python3 -m http.server`, which is enough for the service worker
+(https-or-localhost). Four defects came out of it that no amount of reading
+the code had produced:
+
+1. **The key did not survive a reload.** `save()` writes an explicit field
+   list, and `abKey` / `abAbbr` / `abDev` were not in it. `abDev` belongs
+   there most of all: a device id that regenerates every launch reports one
+   reader as a new reader each time, which is the opposite of the number
+   FUMS exists to count.
+2. **The raw bible id leaked into the reference line** — `ISAIAH 40 ·
+   AB:6F11A7DE016F942E-01` across the top of the page. The header tag had
+   the same bug and had already been fixed *separately*, which is how the
+   second one survived. Both now go through `transLabel()`; anything that
+   displays the translation must use it.
+3. **The picker offered 40 API.Bible rows, most of them free elsewhere.**
+   Their catalogue carries no flag marking the licensed three, so the list
+   is filtered against HelloAO's instead: reading a public-domain text
+   through the key spends a metered call on something that is free below,
+   and gives up search and offline in exchange. Matching on `id` AND
+   `shortName` (HelloAO's id is often `eng_kjv`, the recognisable
+   abbreviation is in `shortName`) took it to 15. Matches stay **exact** on
+   purpose — a fuzzy name match would eventually hide a licensed
+   translation behind a similarly-named free one, and a missing row is a
+   much worse failure than a duplicated one.
+4. The catalogue also lists one translation under several ids, so rows are
+   deduped by abbreviation as well as by id.
+
+Confirmed working by screenshot: the widened hang on `9-11` puts "Climb a
+high mountain, Zion." in line with every other `q1` around it; the colophon
+reads "The Message (MSG) · www.navpress.com · api.bible" above the full
+NavPress notice, which is both required links and the publisher's text.
+Zero console errors on boot, on chapter load, and after a reload.
+
+**Playwright's WebKit is not iOS Safari** — same core engine, different
+embedding. It will not catch home-screen PWA behaviour or Safari's
+viewport-unit handling. The phone remains the last word.
+
 ### Not built yet, and honest about it in the UI
 
 - **Search does not cover these translations.** It reads books saved on the
