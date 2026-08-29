@@ -213,6 +213,20 @@ Two more things the live API taught us, neither guessable from the docs:
   desktop" is not the same problem as on a phone and was not solved by the
   scroll work above — nor by the layout work of 2026-08-28, which is a
   different problem entirely. See "What is still not solved on a desktop".
+- **`display_override: ["fullscreen", "standalone"]`** (added 2026-08-29).
+  On Android an installed Vigil now draws over the system status bar —
+  no clock, no battery, no notification icons — which is the last piece of
+  chrome the app did not already control, and the whole design argument is
+  chrome dissolving until only the text remains. The list is ordered, so
+  anything that does not understand `fullscreen` falls back to the
+  `display` field below it and behaves exactly as before. **iOS ignores it
+  entirely** and stays `standalone`, so this is an Android-only change.
+  The usual trap — text vanishing under a notch or punch-hole once you
+  draw under the status bar — was already solved: `viewport-fit=cover` and
+  `env(safe-area-inset-*)` went in for the iPhone notch months ago, and
+  Android reports the same insets. **An already-installed PWA may need
+  reinstalling** to pick up a changed display mode; Android caches it at
+  install time.
 - The manifest still sets `"orientation": "portrait"`, which locks the
   installed app even on an iPad. **Now a live question rather than a
   hypothetical one**, since the layout handles a landscape tablet as of

@@ -30,7 +30,7 @@
 
    To skip the wait there is Settings → About → Update now, which calls
    registration.update() and reloads into the new worker. */
-const VERSION = "vigil-v23";
+const VERSION = "vigil-v24";
 
 /* Relative so one worker serves both / (local) and /vigil/ (Pages). */
 const SHELL = [
