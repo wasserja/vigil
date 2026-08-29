@@ -173,27 +173,38 @@ Two more things the live API taught us, neither guessable from the docs:
   served over http(s). This surprised the user once already.
 - Wake Lock requires a secure context, so it is dead over plain `http://` on a
   LAN address. `https://` or `localhost` only.
-- Deployment target is GitHub Pages at a **subpath** (`/vigil/`), which matters
-  for service worker scope. **The URL is not free to change** — see the next
-  two entries before agreeing to move it anywhere.
-- **The origin is where the user's data lives.** Settings, last position, the
-  offline index and every downloaded book are keyed to `wasserja.github.io`
-  by the browser. A custom domain is therefore not a DNS change: it is a new
-  origin, so every device silently starts empty, and any installed PWA keeps
-  pointing at the old URL and keeps working there. Nothing warns anyone, and
-  there is no migration path a static page can perform — the two origins
-  cannot read each other's storage. If a custom domain is ever genuinely
-  wanted, that cost is the decision, not the DNS.
-- **Vigil is reachable from `wasserja.github.io` too, and must not be MOVED
-  there.** That root is a separate one-file repo (`wasserja/wasserja.github.io`)
-  holding a redirect to `/vigil/`, so the app can be opened by typing a
-  username on a machine with no history. It is a redirect rather than a
-  relocation for the reason in the entry above this one: the service worker
-  takes the scope it is served from, so at `/` it would sit in front of every
-  other project page on the account. The redirect also keeps the origin
-  identical, which is the whole point. `spoo.me/vigil` is a third-party
-  shortener pointing at the same place — a convenience, and the only one of
-  the three that depends on someone else staying alive.
+- **Deployment target is `https://vigil.bible`** — its own domain since
+  2026-08-29 (Porkbun, $40/yr, GitHub Pages serving the `wasserja/vigil`
+  repo from `main` at root, apex A/AAAA records to GitHub's Pages
+  addresses, `CNAME` file in the repo, HTTPS enforced with a
+  GitHub-provisioned certificate covering the apex and `www`).
+- **The old subpath objection is retired.** Vigil used to live at
+  `wasserja.github.io/vigil/` and could not be moved to that account's
+  root, because a service worker takes the scope it is served from and at
+  `/` it would have sat in front of every other project page on the
+  account. On its own domain Vigil is alone on the origin, so serving from
+  the root is now correct rather than dangerous. Nothing in the app had to
+  change for the move: `start_url` and `scope` are `"./"`, the worker is
+  registered as `"sw.js"`, and its shell list is relative, so it serves
+  from a root or a subpath unmodified. **Keep it that way** — an absolute
+  path anywhere would tie the app to one deployment.
+- **The origin is where the user's data lives, and moving it cost exactly
+  what was predicted.** Settings, last position, the offline index and
+  every downloaded book are keyed to the origin by the browser, so the move
+  to `vigil.bible` started every device empty, and installed PWAs kept
+  pointing at the old URL until they were re-added. There is no migration a
+  static page can perform — two origins cannot read each other's storage.
+  That was known and accepted before the domain was bought. It is now a
+  reason **not to move the app again casually**, rather than an argument
+  against having moved it.
+- **Everything else redirects to it, and that is deliberate.** GitHub
+  redirects the old `wasserja.github.io/vigil/` path to `vigil.bible`
+  automatically. The separate one-file repo `wasserja/wasserja.github.io`
+  redirects the bare username straight to `vigil.bible` — *straight*, not
+  via the old path, or visitors bounce twice. `spoo.me/vigil` is a
+  third-party shortener still pointing at the old path; it works via the
+  redirect chain but is now pointless, since `vigil.bible` is shorter than
+  `spoo.me/vigil` and depends on nobody. Retire it rather than repoint it.
 - **Desktop browsers cannot hide their URL bar on scroll, at all.** Chrome,
   Safari and Firefox on a desktop only surrender chrome to the Fullscreen API,
   which needs a user gesture and shows its own overlay. So "full screen on
@@ -634,7 +645,9 @@ HarperCollins, Tyndale and others.
 **1. It works from the browser — no server needed.** This was the real
 architectural risk and it is cleared. A live preflight against
 `api.scripture.api.bible/v1/bibles` from origin `https://wasserja.github.io`
-returned `access-control-allow-origin: https://wasserja.github.io` and
+(the origin at the time; the app moved to `vigil.bible` on 2026-08-29 and
+their CORS reflects whatever origin asks) returned
+`access-control-allow-origin: https://wasserja.github.io` and
 `access-control-allow-headers: Content-Type,api-key`. So the key rides in
 an `api-key` header exactly as the ESV key rides in `Authorization`, and
 the same "your key, stored locally, never ours" arrangement carries over.
