@@ -1923,6 +1923,82 @@ async function searchESV(key, q, page){
   return { hits, total: d.total_results || 0, page: d.page || page, pages: d.total_pages || 1 };
 }
 
+/* ── API.Bible search ───────────────────────────────────────────
+   /v1/bibles/{id}/search, probed live 2026-08-29 against the Message.
+   Unlike the ESV, this is a genuinely easier parse: a hit's `id` already
+   carries the book and chapter as structured fields (`bookId`,
+   `chapterId`), not a reference string to be read back with a regex --
+   none of refFromESV's Psalm-singular or single-chapter-book traps apply
+   here, because there is no reference string in the loop at all.
+
+   FUMS is carried the same way it is on a chapter fetch: `meta.fumsToken`
+   is present on a search response too, confirmed live, and it gets the
+   same reportFums() call -- a search is still a licensed read.
+
+   Default order is BY RELEVANCE, confirmed live (a plain "love" query
+   opened on Song of Songs 7, not Genesis). `sort=canonical` is a real
+   parameter and puts results back in Bible order, which is what makes
+   Load More traversable rather than jumping every page.
+
+   `verseCount` in the response is not trustworthy: at offset 600 of 681
+   total it echoed the LIMIT (100) rather than the 81 verses actually
+   returned. `data.verses.length` is what's counted here. */
+const AB_PAGE_SIZE = 200;                 // their observed cap; larger pages spend fewer of the 5,000/MONTH
+
+/* The Message's merged verses show up in search exactly as in a chapter:
+   `id` is "JHN.3.27-JHN.3.29a" for a range, plain "PRO.14.22" for one
+   verse. `orgId` is a DIFFERENT, letter-stripped versification -- for
+   "SNG.7.9b-SNG.7.12" the orgId is "SNG.7.9-SNG.7.12", the "b" gone from
+   the range's start -- and it disagrees with `reference`, so `id` is what
+   this reads, not orgId. */
+function abRefFromId(id){
+  const parts = String(id).split("-");
+  const a = parts[0].split(".");
+  if (a.length !== 3 || !byId[a[0]]) return null;
+  const b = a[0], c = +a[1], vStart = a[2];
+  let v = vStart;
+  if (parts.length > 1){
+    const tail = parts[1].split(".");
+    const vEnd = tail[tail.length - 1];
+    /* Only join the two ends when they are in the same book AND chapter.
+       A range crossing a chapter would otherwise render as "John 3:36-1",
+       which reads as nonsense and lands nowhere. Not observed in 1,000
+       live Message ids -- merges do not cross a chapter boundary -- so
+       this is a floor rather than a fix, and it costs one comparison. */
+    const sameChapter = tail.length === 3 && tail[0] === b && tail[1] === a[1];
+    if (vEnd && vEnd !== vStart && sameChapter) v = `${vStart}-${vEnd}`;
+  }
+  /* {b,c,v} to match refFromESV and flattenChapter's shape -- resultRow and
+     open() read those field names off every hit, whichever engine made it. */
+  return c ? { b, c, v } : null;
+}
+
+async function searchAB(key, bibleId, q, offset){
+  const params = new URLSearchParams({
+    query: q, limit: AB_PAGE_SIZE, offset, sort: "canonical", "fums-version": "3"
+  });
+  const res = await fetch(`${AB}/bibles/${encodeURIComponent(bibleId)}/search?${params}`, {
+    headers: { "api-key": key.trim() }
+  });
+  if (res.status === 401 || res.status === 403) throw new Error("badkey");
+  if (!res.ok) throw new Error(`${res.status}`);
+  const payload = await res.json();
+  reportFums(payload.meta && payload.meta.fumsToken);
+  const d = payload.data || {};
+  const raw = d.verses || [];
+  const hits = [];
+  for (const v of raw){
+    const ref = abRefFromId(v.id);
+    /* Same floor as the ESV: drop a hit whose id won't parse rather than
+       render a row that opens nothing. */
+    if (ref) hits.push({ ...ref, t: (v.text || "").replace(/\s+/g, " ").trim() });
+  }
+  /* offset is tracked as what the SERVER actually advanced past, not
+     hits.length -- a dropped hit must not make Load More re-request verses
+     it already consumed, or stall short of `total` forever. */
+  return { hits, total: d.total || 0, offset: offset + raw.length };
+}
+
 /* ══════════════════════════════════════════════════════════════
    7c · Read aloud
    ══════════════════════════════════════════════════════════════
@@ -2471,6 +2547,12 @@ let searchSeq = 0;                // guards against a slow corpus build landing 
    another one. */
 let esvSearch = { q:"", hits:[], total:0, page:0, pages:0 };
 
+/* Same reasoning, and it also carries WHICH bibleId the hits belong to --
+   there are three licensed translations behind one abKey, and switching
+   from MSG to AMP must not paint over stale MSG hits or page a search
+   that was never run against AMP. */
+let abSearch = { q:"", bibleId:"", hits:[], total:0, offset:0 };
+
 /* One result row, shared by both engines so they cannot drift apart. */
 function resultRow(h, parsed){
   const b = el("button");
@@ -2485,21 +2567,26 @@ function resultRow(h, parsed){
 
 function drawSearch(body){
   const isESV = S.translation === "ESV";
+  const isABt = isAB(S.translation);
   const wrap = el("div");
   const input = document.createElement("input");
   input.type = "search";
   input.placeholder = isESV ? "Search the ESV"
-                    : isAB(S.translation) ? "Search isn't available here yet"
+                    : isABt ? `Search ${transLabel()}`
                     : "Search the books you have saved";
   input.value = searchQ; input.autocapitalize = "none"; input.autocorrect = "off";
   input.spellcheck = false;
   wrap.appendChild(input);
 
-  /* The offline sheet promises the query never leaves the phone. That stops
-     being true on the ESV, so say so rather than quietly breaking it. */
+  /* The offline sheet promises the query never leaves the phone. Neither
+     network engine can make that promise, so each says plainly where the
+     query actually goes rather than quietly breaking it. */
   if (isESV) wrap.appendChild(Object.assign(el("div","note"), { textContent:
     "The ESV cannot be stored on the device, so it is searched at Crossway and " +
     "your query is sent to them. Searching a saved book never leaves the phone." }));
+  if (isABt) wrap.appendChild(Object.assign(el("div","note"), { textContent:
+    "This translation can't be stored on the device yet, so it is searched at " +
+    "API.Bible and your query is sent to them. Searching a saved book never leaves the phone." }));
 
   const status = el("div","scount");
   const list = el("div","results");
@@ -2507,19 +2594,7 @@ function drawSearch(body){
   body.appendChild(wrap);
 
   if (isESV) return drawESVSearch(input, status, list);
-
-  /* Offline search reads the books you have saved, and these translations
-     cannot be saved yet -- so the usual "download a book" advice would be
-     advice to press a button that is switched off. API.Bible has a search
-     endpoint of its own; it is simply not built. Say that plainly. */
-  if (isAB(S.translation)){
-    input.disabled = true;
-    list.appendChild(Object.assign(el("div","note"), { textContent:
-      "Search doesn't cover this translation yet. It searches books saved on the " +
-      "device, and this one stays live. Switch to a free translation to search, or " +
-      "read on here." }));
-    return;
-  }
+  if (isABt) return drawABSearch(input, status, list);
 
   const saved = [...offlineBooks].filter(k => k.startsWith(S.translation + "/"));
   if (!saved.length){
@@ -2630,6 +2705,82 @@ function drawESVSearch(input, status, list){
   };
 
   if (esvSearch.q && esvSearch.q === searchQ.trim() && esvSearch.hits.length) paint();
+  else status.textContent = PROMPT;
+
+  if (!searchQ) setTimeout(() => input.focus(), 60);
+}
+
+/* Enter-to-search, same reasoning as the ESV -- the budget here is tighter,
+   5,000 a MONTH rather than a day, so type-ahead is even less affordable. */
+function drawABSearch(input, status, list){
+  const PROMPT = "Type a word or a “quoted phrase”, then press Enter.";
+  const bibleId = S.translation.slice(AB_TAG.length);
+
+  if (!S.abKey){
+    list.appendChild(Object.assign(el("div","note"), { textContent:
+      "Add your API.Bible key under Translation and this translation becomes " +
+      "searchable — not only the books you have saved." }));
+    input.disabled = true;
+    return;
+  }
+
+  const more = el("button","pillbtn","Load more");
+  more.style.display = "block";
+  more.style.margin = "16px auto 0";
+
+  const paint = () => {
+    const parsed = parseQuery(abSearch.q);
+    list.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    for (const h of abSearch.hits) frag.appendChild(resultRow(h, parsed));
+    list.appendChild(frag);
+    const shown = abSearch.hits.length;
+    status.textContent = `${abSearch.total} verse${abSearch.total === 1 ? "" : "s"}` +
+      (shown < abSearch.total ? ` · showing the first ${shown}` : "");
+    /* Gated on the server-side offset, not hits.length -- a dropped hit
+       (see searchAB) must not leave Load More stuck offering a page that
+       can never add anything. */
+    if (abSearch.offset < abSearch.total) list.appendChild(more);
+  };
+
+  /* The query and the bibleId are passed in, never read off S.translation:
+     "Load more" must page the search the results actually belong to, and
+     that stays true even if the reader switches translations mid-sheet. */
+  const run = async (q, offset) => {
+    if (q.length < 2){ status.textContent = PROMPT; return; }
+    const mine = ++searchSeq;
+    status.textContent = offset > 0 ? "Loading more…" : "Searching…";
+    more.disabled = true;
+    try {
+      const r = await searchAB(S.abKey, bibleId, q, offset);
+      if (mine !== searchSeq) return;        // a newer search already won
+      abSearch = (offset > 0 && abSearch.q === q && abSearch.bibleId === bibleId)
+        ? { ...r, q, bibleId, hits: abSearch.hits.concat(r.hits) }
+        : { ...r, q, bibleId };
+      if (!abSearch.total){ list.innerHTML = ""; status.textContent = "No verses found."; return; }
+      paint();
+    } catch (err){
+      if (mine !== searchSeq) return;
+      list.innerHTML = "";
+      status.textContent = err.message === "badkey"
+        ? "API.Bible refused the key. Check it under Translation."
+        : "Could not reach API.Bible. Check your connection.";
+    } finally {
+      more.disabled = false;
+    }
+  };
+
+  more.onclick = () => run(abSearch.q, abSearch.offset);
+  input.oninput = () => {
+    searchQ = input.value;
+    if (searchQ.trim() !== abSearch.q) status.textContent = "Press Enter to search.";
+  };
+  /* blur so the keyboard drops and the results are actually visible. */
+  input.onkeydown = (e) => {
+    if (e.key === "Enter"){ e.preventDefault(); input.blur(); run(searchQ.trim(), 0); }
+  };
+
+  if (abSearch.q && abSearch.q === searchQ.trim() && abSearch.bibleId === bibleId && abSearch.hits.length) paint();
   else status.textContent = PROMPT;
 
   if (!searchQ) setTimeout(() => input.focus(), 60);

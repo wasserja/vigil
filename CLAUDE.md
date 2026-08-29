@@ -201,10 +201,12 @@ Two more things the live API taught us, neither guessable from the docs:
   redirects the old `wasserja.github.io/vigil/` path to `vigil.bible`
   automatically. The separate one-file repo `wasserja/wasserja.github.io`
   redirects the bare username straight to `vigil.bible` — *straight*, not
-  via the old path, or visitors bounce twice. `spoo.me/vigil` is a
-  third-party shortener still pointing at the old path; it works via the
-  redirect chain but is now pointless, since `vigil.bible` is shorter than
-  `spoo.me/vigil` and depends on nobody. Retire it rather than repoint it.
+  via the old path, or visitors bounce twice. **`spoo.me/vigil` is retired**
+  — `vigil.bible` is shorter than it and depends on nobody. The links were
+  made anonymously so nothing owns them and spoo.me's delete endpoint
+  requires ownership; they still resolve through the redirect chain, which
+  is harmless. Do not advertise them, do not depend on them, and do not add
+  a replacement shortener.
 - **Desktop browsers cannot hide their URL bar on scroll, at all.** Chrome,
   Safari and Firefox on a desktop only surrender chrome to the Fullscreen API,
   which needs a user gesture and shows its own overlay. So "full screen on
@@ -232,8 +234,8 @@ Two more things the live API taught us, neither guessable from the docs:
 2. ~~**Modern translations — AMP, MSG, NLT.**~~ **Done 2026-08-29**, v21.
    Third source adapter, key in hand, parser written against live responses
    from all three publishers. See "Modern translations via API.Bible".
-   Still open there: **search does not cover them**, which is the next
-   piece, and offline is off pending a 30-day expiry.
+   Search over them followed the same day (v22). Still open there: offline
+   is off pending a 30-day expiry.
 3. **Microsoft's neural voices — Ava, and the rest.** Wanted 2026-08-29.
    Item 1 above is the free half of this same question and must be settled
    first. See "Microsoft neural voices: Ava, Edge and Azure".
@@ -906,14 +908,53 @@ Zero console errors on boot, on chapter load, and after a reload.
 embedding. It will not catch home-screen PWA behaviour or Safari's
 viewport-unit handling. The phone remains the last word.
 
+### API.Bible search
+
+Built 2026-08-29 on `/v1/bibles/{id}/search`, and it is a far easier parse
+than the ESV's: a hit carries `bookId` and a structured `id`, so there is
+no reference string to read back with a regex and **none of `refFromESV`'s
+traps apply** — no Psalm-singular case, no single-chapter-book case.
+
+What the live endpoint taught us, none of it guessable from the docs:
+
+- **`id` agrees with `reference`; `orgId` does not.** `orgId` is a
+  different, letter-stripped versification — for `SNG.7.9b-SNG.7.12` its
+  orgId is `SNG.7.9-SNG.7.12`, the "b" gone. Read `id`.
+- **A merged verse's search `id` matches the chapter payload's marker
+  exactly** — `JHN.3.27-JHN.3.29a` in search is `number: "27-29a"` in the
+  chapter. That is why `resultRow`, `open()` and `landOn` needed no
+  changes: they already treat `v` as an opaque string.
+- **Default order is by RELEVANCE, not canonical** — a plain `love` query
+  opens on Song of Songs. `sort=canonical` is real and is used, because
+  without it "Load more" jumps unpredictably between pages.
+- **`verseCount` lies on a partial page.** At offset 600 of 681 it echoed
+  the *limit* rather than the 81 verses actually returned. Count
+  `data.verses.length`.
+- **`limit` clamps at 200**, not the ESV's 100. Bigger pages spend fewer of
+  the 5,000-a-MONTH calls.
+- **`meta.fumsToken` is on search responses too**, so a search is reported
+  like a read — it is still a licensed use.
+- **A quoted phrase is not a strict phrase match** server-side. The query
+  goes through verbatim; `parseQuery`/`highlight` are reused only for
+  client-side highlighting, so an unmatched phrase simply renders
+  unhighlighted rather than wrongly.
+
+Two things paging must get right, both learned by breaking them: the
+offset advances by what the SERVER returned, not by how many hits
+survived parsing, or a dropped hit stalls "Load more" short of `total`
+forever; and `abSearch` records which `bibleId` its hits belong to, since
+three licensed translations sit behind one key and switching from MSG to
+AMP must not page a search that was never run against AMP.
+
+`abRefFromId` joins a range's two ends only when they share a book AND
+chapter. A cross-chapter range would otherwise read "John 3:36-1" and land
+nowhere. Not observed in 1,000 live Message ids — merges do not cross a
+chapter boundary — so it is a floor, not a fix.
+
 ### Not built yet, and honest about it in the UI
 
-- **Search does not cover these translations.** It reads books saved on the
-  device and these are not saved, so the usual "download a book" advice
-  would point at a button that is switched off. The sheet says so plainly
-  and disables the field. API.Bible has a search endpoint; wiring it is the
-  obvious next piece, and it is the ESV's shape — spend a call, page the
-  results.
+- ~~Search does not cover these translations.~~ **Built 2026-08-29**, v22,
+  on `/v1/bibles/{id}/search`. See "API.Bible search" below.
 - **Offline download is off**, though unlike the ESV it is *permitted*. A
   saved chapter would have to expire within 30 days and that expiry is not
   built. Keeping text past its licence because the expiry was "obviously
@@ -946,17 +987,58 @@ cost, and no text leaves for anywhere Vigil chose to send it.
 So the first move is not code. It is opening Settings → Read aloud →
 Voice in Edge and reading the list.
 
-Two things to expect while checking, neither of them a reason to give up:
+**Expect this to fail on a phone, and check anyway.** Researched further
+2026-08-29 and the outlook got worse rather than better:
 
-- **Platform matters more than the browser's name.** Edge on Android is
-  Chromium and is the plausible case. **Edge on iOS is not Edge** — every
-  iOS browser is WebKit underneath, so it gets Apple's voices, and the
-  Microsoft neural voices will not be there. The Natural voices are also
-  documented mostly against Windows; macOS and Android coverage is the
-  unverified part.
+- **The engine hosting the page decides the voice list, not the app.** An
+  installed PWA runs in whichever browser installed it, so on Android one
+  installed from Chrome gets Google's voices and one installed from Edge
+  gets Edge's. On iOS it makes no difference at all — every browser there
+  is WebKit underneath and gets Apple's voices. Jason reached this himself;
+  it is correct.
+- **The Microsoft Natural voices are documented against Windows 11
+  desktop**, and Edge on Android has reported trouble enumerating voices
+  through `speechSynthesis` at all. So the free path probably does not
+  exist on either of Jason's phones, and may not exist on macOS Edge
+  either.
 - **A known Edge bug** returns every natural voice as `Microsoft undefined
   Online (Natural) - undefined` from `getVoices()`. If the picker looks
   broken rather than empty, that is this, not Vigil.
+
+Still worth the two minutes, because it would delete this whole section.
+But plan for the answer being no.
+
+### `edge-tts` — considered and rejected for the app
+
+The Python library (`rany2/edge-tts`) reaches the same online service
+Edge's Read Aloud uses and yields Ava with no key and no Azure account.
+Considered 2026-08-29 and rejected for the shipped app on three counts,
+the first of which settles it regardless of the other two:
+
+1. **It is a Python library, and Vigil has no server.** Using it means
+   standing up a service reachable from a phone outside the house. That is
+   a different product from the one-file app this whole document exists to
+   protect.
+2. **It is an undocumented private endpoint** being used outside its
+   intended client — its own README advertises working "without needing
+   Microsoft Edge or Windows or an API key", which is the tell. Not a
+   criminal matter; a terms matter, and a fragile one, since Microsoft has
+   broken third-party clients before by adding token requirements.
+3. **It is the worst possible posture for the licensed texts.** Sending
+   ESV, Message, Amplified or NLT to *Azure* is a licensing question nobody
+   has read the terms on yet. Sending them to a reverse-engineered endpoint
+   is that same question with the answer already unfavourable.
+
+Fine as a toy on minime. Not in Vigil.
+
+### A third option, which fits the architecture better than either
+
+**Pre-generate the audio for public-domain translations and host it as
+static files.** No key in the client, no per-request cost, no text leaving
+the device at read time, and it would work offline exactly as downloaded
+text does — which is the only one of these options that Vigil's design
+actually wants. Lawful only for the public-domain texts, and the storage
+is real, but it is the path that compromises nothing.
 
 ### Second: Azure AI Speech, if Edge will not give them up
 
