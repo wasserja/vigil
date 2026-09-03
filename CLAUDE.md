@@ -257,6 +257,12 @@ Two more things the live API taught us, neither guessable from the docs:
 5. **Desktop full screen.** All that is left of the larger-screens item
    below, now that the layout part is done — and it is a separate problem,
    not a layout one. See "Known constraints".
+6. ~~**In-app help.**~~ **Done 2026-09-03**, v25. Settings → Help, eight
+   topics, written for someone who does not know what an API key is. See
+   "In-app help".
+7. ~~**A preview deployment.**~~ **Done 2026-09-03.** `vnext.sh`, and
+   the storage/cache namespacing it required. See "The preview
+   deployment".
 
 The numbered history below is what has already been done.
 
@@ -1116,14 +1122,67 @@ Same voices, sold directly. This is a real project, not a switch.
 - **Audio of licensed text cannot be cached** any more than the text can,
   which removes the obvious way to make the character budget survivable.
 
+### A fourth option, ESV only: Crossway already narrates it
+
+**Wanted 2026-09-02, not built.** The ESV API has an audio endpoint, and it
+is the "Hear the Word" recording — a human reading, not synthesis. Verified
+live against Jason's key that day:
+
+- `GET https://api.esv.org/v3/passage/audio/?q=John+1:1-5` with the usual
+  `Authorization: Token` header returns **no audio**. It is a `302` to
+  `audio.esv.org`.
+- **The redirect target needs no key at all.** Fetched with no auth header
+  it returns `200 audio/mpeg`. The URL is deterministic:
+  `https://audio.esv.org/hw/{lq|mq|hq}/<Reference>.mp3`.
+- Tiers, for John 1:1-5: `lq` 174 KB, `mq` 347 KB (128 kbps mono), `hq`
+  694 KB. Granularity is anything the API parses — a passage, a whole
+  chapter (John 1, 5.4 MB), a short book (Jude, 3.8 MB).
+- It sends `Accept-Ranges: bytes`, so scrubbing works.
+- It sends **no `Access-Control-Allow-Origin`**. That is fine for
+  `<audio src>`, which is not subject to CORS, and fatal for `fetch()` or
+  Web Audio. So: no waveform, no gain node, no reading the bytes.
+
+**Why this is better than everything above, for the ESV.** It costs
+nothing, puts no key in the client, and — the part that matters — **no
+text is transmitted to a synthesis service.** The whole licensing knot in
+the Azure note is that synthesising a chapter means sending Crossway's
+text to Microsoft. Here Crossway serves their own audio of their own text
+and the question does not arise.
+
+**Why it is NOT a better backend for the Listen button.** Read aloud
+highlights the exact word being spoken, driven by `speechSynthesis`
+boundary events feeding the Custom Highlight API. **An MP3 has no boundary
+events and no word timings**, so that highlighting cannot survive the
+swap. This is a *second, parallel mode* — "play the recording" alongside
+"read it to me" — and anyone who implements it as a drop-in replacement
+will silently delete the feature the read-aloud work was mostly about.
+Do not do that.
+
+**What it does not solve.** It is ESV only: nothing for AMP, MSG or NLT,
+and nothing for the public-domain texts, which are still the only ones the
+pre-generated-static-files option can lawfully serve. And it is a remote
+fetch — the "audio of licensed text cannot be cached" constraint applies
+here exactly as it does to Azure, so this mode does **not** get the
+offline story that downloaded text has.
+
+**Unread, and blocking:** Crossway's terms have been read here for the
+*text* API (see the ESV section above). They have **not** been read on
+audio, and audio may well be licensed differently from text. Read them
+before shipping this, not after.
+
 ### The order, then
 
 1. Check Edge's voice list. If Ava is there, this is finished and costs
    nothing.
-2. If it is not: the Azure path is public-domain translations only until
-   the ESV and API.Bible terms have been read specifically on the question
-   of transmitting text to a synthesis service.
-3. Only then the key handling, and it needs its own warning in the sheet,
+2. Independently of that, the **ESV audio endpoint** is the cheapest real
+   win on this list — free, keyless, human-read — and it is blocked only
+   on reading Crossway's audio terms. It is a separate Listen mode, not a
+   swap of the existing one. Doing it does not settle Ava, because it
+   covers one translation.
+3. If Ava is not in Edge: the Azure path is public-domain translations
+   only until the ESV and API.Bible terms have been read specifically on
+   the question of transmitting text to a synthesis service.
+4. Only then the key handling, and it needs its own warning in the sheet,
    because unlike the other two keys this one spends money.
 
 ## Someday: Hebrew and Greek, and searching the originals
@@ -1173,6 +1232,138 @@ Hebrew), so direction is data, not a lookup table we would have to keep.
 **Read-aloud should be off for these.** `speechSynthesis` has no Biblical
 Hebrew or Koine voices; a modern Hebrew voice would mispronounce pointed
 Biblical text confidently, which is worse than silence.
+
+## In-app help (built 2026-09-03)
+
+Settings → Help → "How Vigil works". Eight topics in an accordion:
+what Vigil is, finding your way around, making it easy on your eyes,
+having it read aloud, reading other translations, offline and search,
+keeping it on your phone, and where settings and keys are kept.
+
+**It exists because the reading surface is deliberately unlabelled.** Four
+glyphs across the top, one word along the bottom, and chrome that dissolves
+after 2.8 seconds — which is right for someone who already knows the app
+and opaque to everyone else. The brief was explicit: *"I understand what an
+API key is but other people will not."* So the explaining happens in one
+place, in plain words, rather than as hints bolted onto the reading page.
+**Nothing was added to the reader itself, and nothing should be.**
+
+- **Authored HTML in the `HELP` array**, `id` / `q` / `a`, rendered through
+  `innerHTML`. That is safe *because the strings are written in the source
+  and never built from anything a user or a server typed* — keep it that
+  way, or switch to nodes.
+- **`<details>`, not a scrolled essay.** Someone who only wants to know what
+  Listen does should not read past the translations. It also carries its own
+  open state, which matters because `drawSheet()` tears the sheet body down
+  and rebuilds it on every draw.
+- **Two contextual links** — `helpLink()` — at the two places the app
+  asks something of a reader who may not know what is being asked: the
+  Read aloud group ("How Listen works") and the top of the Translation
+  sheet ("How to get one"). `openHelp(topic)` records `helpFrom`, so the
+  back arrow returns to the sheet you came from rather than always to
+  Settings, and the topic arrives already open and scrolled to.
+- **`drawSheet()` now resets `body.scrollTop` on a change of view**, not on
+  a redraw. One element serves every view and kept its scroll across a
+  switch — a scrolled Settings opened Translation halfway down the list,
+  past the group titles and past the new link. A redraw (a toggle, a theme
+  flip) must still hold its place, hence `drawnView`.
+
+**The copy states what is true, including the unflattering parts:** the
+Listen voice is the device's own and sounds like a machine reading
+carefully rather than an audiobook; the api.bible key allows three licensed
+Bibles and three is the whole allowance; approval can take a day or two;
+and the FUMS beacon is disclosed as "a note to them that a chapter was
+read, which their licence requires — nothing of the sort is sent for the
+free translations or the ESV". If a term changes, this copy changes with
+it.
+
+**Edge is named, because it is the honest answer.** On a computer Edge's
+neural voices are far better than Chrome's or Safari's and show up in
+Vigil's own Voice list; on iOS every browser is WebKit and Edge changes
+nothing, which the topic says outright. Listening layout is explained as
+what to turn on before a long listen — both for Vigil's own Listen and
+for Edge's Read Aloud.
+
+**One factual fix went with it.** The API.Bible note under the key field
+claimed the free key carries "the NIV, NASB, NLT, The Message and the
+Amplified". The 2026-08-29 verification against the live key found no NIV
+and no NASB anywhere in the catalogue, so the note promised what the key
+cannot deliver. Now it names only NLT, The Message and the Amplified.
+
+## The preview deployment — vigil.bible/vnext/ (built 2026-09-03)
+
+`./vnext.sh stage` mirrors the working `index.html` into `vnext/` and pushes
+it; you verify at **https://vigil.bible/vnext/** on the actual phone, over
+real HTTPS, installed if you like; `./vnext.sh promote` then publishes the
+verified build to the root of the site. `status` says what is staged and
+what differs, `serve` runs both locally on one origin.
+
+**Why a subdirectory rather than a `next.` subdomain.** The subdomain is
+the obvious answer, because a separate origin isolates everything for free.
+It was passed over because the three things that actually needed isolating
+turned out to be namespaceable, and doing that fixed a real bug the app
+already had — where a subdomain would only have hidden it. No DNS record,
+no second Pages site, one repo, one push.
+
+**There is ONE hand-edited copy of this app and it is `index.html`.**
+`vnext/` is generated and must never be edited. This is the same objection
+that killed the separate listening-layout folder — two copies drift the
+first time a fix lands in one of them — and the answer here is that the
+copy is *derived*, not maintained: `promote` regenerates from `index.html`
+and refuses to publish unless `vnext/` matches byte for byte. A hand-edit
+fails the check loudly. So does promoting a build you never staged.
+
+The generator rewrites the absolute minimum, and that restraint is the
+point: **a preview you have altered is a preview you have not verified.**
+Only a `noindex` meta and the PWA's name change. `start_url` already
+differs, so the preview installs as its own app rather than fighting the
+real one for the same home-screen icon. `CNAME` is deliberately not
+mirrored — it is Pages configuration and is only valid at the site root.
+
+### What had to change in the app, and why it was worth changing anyway
+
+**Storage is partitioned by ORIGIN, not by path.** A preview under the same
+domain would otherwise have shared one reader's settings, place, downloaded
+books and API keys with the real app — and a half-finished build could
+corrupt all four. `DEPLOY` is derived from the path the app is served from
+(`""` at the root, `"vnext"` at `/vnext/`) and keys three things:
+
+- `Store`'s localStorage `PREFIX` → `vigil:` / `vigil:vnext:`
+- the IndexedDB database name → `vigil` / `vigil-vnext`. It had to be the
+  DB **name**: book keys bypass `PREFIX` entirely, by design, since they
+  are routed to IDB by their `bk:` prefix.
+- **The root resolves to `""`, so production keeps the exact keys it has
+  and there is nothing to migrate.** Any subpath isolates itself.
+
+**CacheStorage is also per-origin, and the old worker deleted every key
+that was not its own.** Two deployments on one origin therefore deleted
+each other's shell, permanently, in both directions — and since a staged
+preview is by definition a *different* build from production, this was
+guaranteed to fire on every single check rather than being a theoretical
+risk. Measured before the fix: visiting `/vnext/` wiped production's
+`vigil-v25` cache outright, leaving an app that could no longer open
+without a signal. The cache key now carries the scope (`vigil/v25`,
+`vigil/vnext/v25`) and the sweep only considers keys belonging to this
+scope — `isMine` deliberately rejects deeper deployments, because at the
+root `vigil/` is a prefix of `vigil/vnext/v25` too. `isLegacy` clears the
+pre-scope `vigil-vNN` keys and is restricted to a root deployment, or a
+preview would delete production's live cache on its way past.
+
+**This was a live bug before the preview existed**, back when Vigil sat at
+`wasserja.github.io/vigil/` beside the account's other Pages projects. It
+was never noticed because nothing else on that origin registered a worker.
+
+Verified 2026-09-03 with both deployments served from one origin: the
+preview starts with no settings and no key, production's key/translation/
+shell survive a visit to the preview, the preview's survive a visit to
+production, and the two caches and two databases coexist throughout.
+
+### Ask for the scope, not just the build
+
+Settings → About now shows `v25` at the root and `v25 · /vnext/` on the
+preview, because "the fix didn't work" and "you are looking at the preview"
+are the same sentence otherwise. The `VERSION` constant became `BUILD` plus
+a scope; **bump `BUILD` on release**, as before.
 
 ## Where this is heading (2026-08-27)
 

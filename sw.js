@@ -30,7 +30,31 @@
 
    To skip the wait there is Settings → About → Update now, which calls
    registration.update() and reloads into the new worker. */
-const VERSION = "vigil-v24";
+const BUILD = "v25";
+
+/* CacheStorage is partitioned by ORIGIN, not by worker scope, so every
+   worker on this origin sees every other worker's cache keys — and activate
+   below deletes the ones that are not its own. Two deployments on one
+   origin (production at / and a preview at /vnext/) would therefore delete
+   each other's shell on every visit, permanently, in both directions.
+   Vigil used to sit on wasserja.github.io beside other Pages projects,
+   where this was live and unnoticed.
+
+   So the key carries the scope, and the sweep only ever considers keys
+   belonging to THIS scope. */
+const SCOPE   = new URL(self.registration.scope).pathname;   // "/" or "/vnext/"
+const KEYSPACE = "vigil" + SCOPE;                            // "vigil/" or "vigil/vnext/"
+const VERSION = KEYSPACE + BUILD;
+
+/* Ours, and not a deeper deployment's: at the root, KEYSPACE is "vigil/",
+   which "vigil/vnext/v25" also starts with. A key is this scope's only if
+   nothing follows the prefix but the build. */
+const isMine = k => k.startsWith(KEYSPACE) && !k.slice(KEYSPACE.length).includes("/");
+
+/* Keys written before the scope was in them ("vigil-v24"). Only a root
+   deployment ever wrote one, so only a root deployment clears them —
+   otherwise a preview would delete production's live cache on its way past. */
+const isLegacy = k => SCOPE === "/" && /^vigil-v/.test(k);
 
 /* Relative so one worker serves both / (local) and /vigil/ (Pages). */
 const SHELL = [
@@ -58,7 +82,9 @@ self.addEventListener("install", e => {
 self.addEventListener("activate", e => {
   e.waitUntil(
     caches.keys()
-      .then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k))))
+      .then(ks => Promise.all(ks
+        .filter(k => k !== VERSION && (isMine(k) || isLegacy(k)))
+        .map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -68,7 +94,7 @@ self.addEventListener("activate", e => {
    like a real bug, and it already sent two read-aloud reports the wrong way. */
 self.addEventListener("message", e => {
   if (e.data !== "version") return;
-  const reply = { vigilVersion: VERSION };
+  const reply = { vigilVersion: BUILD + (SCOPE === "/" ? "" : " \u00b7 " + SCOPE) };
   /* Reply down the port when one is supplied: on a first load the page is
      not yet a controlled client, so e.source can be null and a plain
      postMessage would go nowhere. */
