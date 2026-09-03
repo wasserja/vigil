@@ -1,0 +1,139 @@
+/* ══════════════════════════════════════════════════════════════
+   Vigil — service worker
+
+   Job: make the shell open instantly with no signal. That is all.
+
+   ── Licensing: read before adding any runtime caching ──────────
+   This worker NEVER caches a scripture API response. The
+   same-origin guard in fetch() is not a performance choice, it is
+   a licensing boundary: ESV text is copyright Crossway and may be
+   fetched live with the user's own key but must not be written to
+   disk. A "helpful" runtime cache over api.esv.org would put the
+   app in breach. HelloAO text is public domain and legal to store,
+   but it already has a real offline path (IndexedDB, via Store) —
+   caching it here too would add a second, staler copy with no
+   eviction story. Shell only. Leave the guard alone.
+
+   Chapter text is therefore never this worker's business. Offline
+   scripture comes from IndexedDB inside the page, not from here.
+   ══════════════════════════════════════════════════════════════ */
+
+/* Bump on release.
+
+   It does NOT make the new build appear on the first launch — that claim
+   was here for a while and it is wrong, and it cost real debugging time.
+   The launch that notices a changed sw.js has ALREADY been served its HTML
+   from the old cache; the new worker installs, skipWaiting()s and claims
+   behind it, so the new build shows on the NEXT launch. What bumping
+   actually buys is a wholly fresh cache (install refetches the shell with
+   cache:"reload") and the removal of the old one in activate.
+
+   To skip the wait there is Settings → About → Update now, which calls
+   registration.update() and reloads into the new worker. */
+const BUILD = "v25";
+
+/* CacheStorage is partitioned by ORIGIN, not by worker scope, so every
+   worker on this origin sees every other worker's cache keys — and activate
+   below deletes the ones that are not its own. Two deployments on one
+   origin (production at / and a preview at /vnext/) would therefore delete
+   each other's shell on every visit, permanently, in both directions.
+   Vigil used to sit on wasserja.github.io beside other Pages projects,
+   where this was live and unnoticed.
+
+   So the key carries the scope, and the sweep only ever considers keys
+   belonging to THIS scope. */
+const SCOPE   = new URL(self.registration.scope).pathname;   // "/" or "/vnext/"
+const KEYSPACE = "vigil" + SCOPE;                            // "vigil/" or "vigil/vnext/"
+const VERSION = KEYSPACE + BUILD;
+
+/* Ours, and not a deeper deployment's: at the root, KEYSPACE is "vigil/",
+   which "vigil/vnext/v25" also starts with. A key is this scope's only if
+   nothing follows the prefix but the build. */
+const isMine = k => k.startsWith(KEYSPACE) && !k.slice(KEYSPACE.length).includes("/");
+
+/* Keys written before the scope was in them ("vigil-v24"). Only a root
+   deployment ever wrote one, so only a root deployment clears them —
+   otherwise a preview would delete production's live cache on its way past. */
+const isLegacy = k => SCOPE === "/" && /^vigil-v/.test(k);
+
+/* Relative so one worker serves both / (local) and /vigil/ (Pages). */
+const SHELL = [
+  "./",
+  "./index.html",
+  "./manifest.webmanifest",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./icon-maskable-512.png",
+  "./apple-touch-icon.png"
+];
+
+self.addEventListener("install", e => {
+  e.waitUntil(
+    caches.open(VERSION)
+      /* Individual puts, not addAll: addAll is atomic, so one 404 (a
+         renamed icon, say) throws the whole install away and the app
+         silently keeps the old worker forever. */
+      .then(c => Promise.all(SHELL.map(u =>
+        c.add(new Request(u, { cache: "reload" })).catch(() => null))))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener("activate", e => {
+  e.waitUntil(
+    caches.keys()
+      .then(ks => Promise.all(ks
+        .filter(k => k !== VERSION && (isMine(k) || isLegacy(k)))
+        .map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+/* The page asks which build is actually live. "Am I on the new one?" was
+   costing a round of guesswork every release — a stale shell looks exactly
+   like a real bug, and it already sent two read-aloud reports the wrong way. */
+self.addEventListener("message", e => {
+  if (e.data !== "version") return;
+  const reply = { vigilVersion: BUILD + (SCOPE === "/" ? "" : " \u00b7 " + SCOPE) };
+  /* Reply down the port when one is supplied: on a first load the page is
+     not yet a controlled client, so e.source can be null and a plain
+     postMessage would go nowhere. */
+  if (e.ports && e.ports[0]) e.ports[0].postMessage(reply);
+  else if (e.source) e.source.postMessage(reply);
+});
+
+self.addEventListener("fetch", e => {
+  const req = e.request;
+  if (req.method !== "GET") return;
+
+  /* THE LICENSING BOUNDARY — see header. Anything not served from our
+     own origin (api.esv.org, bible.helloao.org) goes straight to the
+     network, untouched and unstored. */
+  if (new URL(req.url).origin !== self.location.origin) return;
+
+  e.respondWith((async () => {
+    const cache  = await caches.open(VERSION);
+    const cached = await cache.match(req, { ignoreSearch: true });
+
+    /* Revalidate in the background: serve instantly from cache, and
+       quietly refresh it for next launch. */
+    const fresh = fetch(req).then(res => {
+      if (res && res.ok && res.type === "basic") cache.put(req, res.clone());
+      return res;
+    }).catch(() => null);
+
+    if (cached) { e.waitUntil(fresh); return cached; }
+
+    const res = await fresh;
+    if (res) return res;
+
+    /* Offline and never cached — for a navigation (a deep link, or a
+       cold start against a stale cache key) fall back to the shell so
+       the app still opens rather than showing the browser error page. */
+    if (req.mode === "navigate") {
+      const shell = await cache.match("./index.html") || await cache.match("./");
+      if (shell) return shell;
+    }
+    return new Response("", { status: 503, statusText: "Offline" });
+  })());
+});
