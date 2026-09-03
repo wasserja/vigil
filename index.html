@@ -642,6 +642,44 @@ input:focus{outline:none;border-color:var(--gilt-dim)}
 .tlist button i{font-style:normal;font-size:11px;color:var(--ink-faint);flex:1;text-align:right}
 .tlist button[aria-current="true"] b{color:var(--gilt)}
 
+/* ── Help ───────────────────────────────────────────────────────
+   An accordion, not an essay. Someone who only wants to know what
+   Listen does should not have to read past the translations, and a
+   non-technical reader will not scroll a wall of prose on a phone.
+   <details> carries its own open state, which matters because the
+   sheet body is torn down and rebuilt on every drawSheet(). */
+.help details{border-bottom:1px solid var(--line-soft)}
+.help details:last-of-type{border-bottom:0}
+.help summary{
+  list-style:none;cursor:pointer;
+  display:flex;align-items:center;gap:12px;
+  padding:15px 8px;font-size:14px;color:var(--ink);
+}
+.help summary::-webkit-details-marker{display:none}
+.help summary::after{
+  content:"\203A";margin-left:auto;flex:none;
+  color:var(--ink-faint);font-size:17px;line-height:1;
+  transform:rotate(90deg);transition:transform 180ms ease;
+}
+.help details[open] summary{color:var(--gilt);padding-bottom:5px}
+.help details[open] summary::after{transform:rotate(-90deg)}
+.help summary:active{background:var(--press)}
+/* Deliberately larger and lighter than .note: this is the one place in
+   the app someone actually reads UI text at length. */
+.help .hb{padding:0 8px 20px;font-size:12.5px;line-height:1.7;color:var(--ink-dim)}
+.help .hb p{margin:0 0 .85em}
+.help .hb *:last-child{margin-bottom:0}
+.help .hb b{font-weight:600;color:var(--ink)}
+.help .hb a{color:var(--gilt-dim)}
+.help .hb ol,.help .hb ul{margin:0 0 .85em;padding-left:1.3em}
+.help .hb li{margin-bottom:.45em}
+.help .hb .k{
+  font-size:11px;letter-spacing:.06em;color:var(--ink);
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:6px;padding:1px 6px;white-space:nowrap;
+}
+@media (prefers-reduced-motion: reduce){.help summary::after{transition:none}}
+
 .note{
   font-size:11.5px;line-height:1.6;color:var(--ink-faint);
   padding:12px 8px 0;
@@ -750,9 +788,21 @@ input:focus{outline:none;border-color:var(--gilt-dim)}
 /* ══════════════════════════════════════════════════════════════
    1 · Storage — persists settings + last position + offline books
    ══════════════════════════════════════════════════════════════ */
+/* Which deployment this is, derived from the path the app is served from:
+   "" at the root, "vnext" at /vnext/. Storage is partitioned by ORIGIN and
+   not by path, so without this a preview build sitting in a subdirectory
+   would share one reader's settings, place, downloaded books and API keys
+   with the real app — and a half-finished build could corrupt all four.
+
+   The root resolves to "", so production keeps the exact keys it already
+   has and there is nothing to migrate. Anything at a subpath isolates
+   itself automatically, which is also what makes it safe for Vigil to sit
+   alongside other projects on a shared origin. */
+const DEPLOY = new URL("./", location.href).pathname.replace(/^\/|\/$/g, "").replace(/\//g, "-");
+
 const Store = (() => {
   const mem = new Map();
-  const PREFIX = "vigil:";                 // the origin is shared with other Pages projects
+  const PREFIX = "vigil:" + (DEPLOY ? DEPLOY + ":" : "");
   const isBook = k => k.startsWith("bk:"); // books go to IndexedDB; everything else is small
 
   /* localStorage — settings, last position, offline index.
@@ -765,7 +815,9 @@ const Store = (() => {
   } catch (_) { ls = null; }
 
   /* IndexedDB — downloaded books, far too large for localStorage. */
-  const DB = "vigil", TABLE = "books";
+  /* Named, not prefixed: book keys bypass PREFIX entirely (see set/get
+     below), so the database name is where this deployment separates. */
+  const DB = "vigil" + (DEPLOY ? "-" + DEPLOY : ""), TABLE = "books";
   let dbp = null;
   function openDB(){
     if (dbp) return dbp;
@@ -2310,17 +2362,23 @@ function openSheet(view){
 }
 function closeSheet(){
   esvKeyOpen = false; abKeyOpen = false;
+  helpTopic = null; helpFrom = null;
   document.body.classList.remove("sheet-open");
   unlockScroll();
   sheetView = null; pickedBook = null;
   showChrome();
 }
 
+let drawnView = null;
 function drawSheet(){
   const body = $("#sheet-body");
   const back = $("#sheet-back");
   body.innerHTML = "";
   back.hidden = true;
+  /* One element serves every view and keeps its scrollTop across a switch,
+     so a scrolled Settings used to open Translation halfway down the list.
+     Only on a change of view: a redraw must hold its place. */
+  if (drawnView !== sheetView){ body.scrollTop = 0; drawnView = sheetView; }
 
   if (sheetView === "passage"){
     $("#sheet-title").textContent = pickedBook ? (byId[pickedBook].name) : "Passage";
@@ -2335,6 +2393,10 @@ function drawSheet(){
   } else if (sheetView === "search"){
     $("#sheet-title").textContent = "Search";
     drawSearch(body);
+  } else if (sheetView === "help"){
+    $("#sheet-title").textContent = "Help";
+    back.hidden = false;
+    drawHelp(body);
   }
 }
 
@@ -2395,6 +2457,238 @@ function drawChapters(body){
   body.appendChild(grid);
 }
 
+/* ══════════════════════════════════════════════════════════════
+   Help — written for someone who has never met an API key.
+
+   The app is deliberately unlabelled: four glyphs at the top, a
+   word at the bottom, and chrome that dissolves. That is right for
+   the reading surface and wrong for a first-time reader, so the
+   explaining happens here rather than as hints bolted onto the
+   page. Plain words, no jargon, and every topic answers a question
+   somebody actually asks out loud.
+
+   Topics are authored HTML — static, written here, never built
+   from anything a user or a server typed. Keep it that way.
+   ══════════════════════════════════════════════════════════════ */
+const HELP = [
+  { id:"about", q:"What is Vigil?",
+    a:`<p>Vigil is a Bible that tries to get out of the way.</p>
+       <p>Most reading apps put a good deal between you and the words —
+       toolbars, tabs, banners, a menu down one side. Vigil gives the words
+       the whole screen. A few seconds after you start reading the buttons
+       fade out, and they come back the moment you reach for them, so most
+       of the time there is nothing on the glass but scripture, set the way
+       a printed book would set it: a large numeral to open the chapter,
+       verse numbers small and gold in the margin.</p>
+       <p><b>It is built dark first.</b> Not dark grey — properly black,
+       which on most phone screens made in the last few years means those
+       pixels are switched off altogether rather than lit up dim. The
+       letters are warm rather than white, closer to ink by candlelight,
+       and you can take them down well past where your phone's own
+       brightness slider stops. That is what makes it bearable in bed, at
+       three in the morning, or in a room where someone else is asleep.</p>
+       <p><b>There is a light mode too</b> — for daylight, or for anyone who
+       simply prefers a pale page. It is the same quiet page rather than a
+       different app, and it never goes stark white. <b>Settings &rarr;
+       Light &rarr; Theme</b>.</p>
+       <p>And that is nearly all there is to it. No account, no
+       notifications, no adverts, nothing to buy, nothing to sign up for.
+       You open it and you read, and it remembers where you stopped.</p>` },
+
+  { id:"nav", q:"Finding your way around",
+    a:`<p>Along the top:</p>
+       <ul>
+         <li><b>Genesis 1</b> — where you are. Tap it to go anywhere else in
+             the Bible: pick a book, then a chapter.</li>
+         <li><b>&#8981;</b> — search.</li>
+         <li><b>BSB</b> — the translation you are reading. Tap it to change
+             translation.</li>
+         <li><b>aA</b> — everything about how the page looks. That is the
+             panel you are reading this in.</li>
+       </ul>
+       <p>Along the bottom: <b>&lsaquo;</b> and <b>&rsaquo;</b> turn to the
+       previous and next chapter, and <b>Listen</b> reads the chapter
+       aloud.</p>
+       <p>Both bars fade away a few seconds after you start reading, so that
+       only the text is left. <b>Tap the middle of the page</b> to bring them
+       back — or scroll up. You can also <b>swipe left or right</b> across the
+       text to turn the chapter.</p>
+       <p>On a computer keyboard: <span class="k">&larr;</span>
+       <span class="k">&rarr;</span> turn the chapter,
+       <span class="k">G</span> opens the passage picker, and
+       <span class="k">Esc</span> closes a panel.</p>` },
+
+  { id:"look", q:"Making it easy on your eyes",
+    a:`<p>Nothing in this panel changes the words — only how they are set on
+       the page. Move a control and the text behind it changes as you go.</p>
+       <ul>
+         <li><b>Light</b> — dark or light page, how bright the text is, and
+             how warm. Warmth pulls the letters from cool grey toward
+             candlelight; it is the setting that makes late reading easy.</li>
+         <li><b>Type</b> — size, spacing between lines, how wide the column
+             runs, and which typeface.</li>
+         <li><b>Page</b> — show or hide verse numbers, run the text as
+             flowing paragraphs or one verse per line, and tint the words of
+             Jesus red.</li>
+         <li><b>Reading</b> — whether the bars hide themselves, and whether
+             the screen is kept awake so it does not dim mid-chapter.</li>
+       </ul>
+       <p>Your settings are kept on this device and are waiting next time.</p>` },
+
+  { id:"listen", q:"Having it read aloud",
+    a:`<p><b>Listen</b>, at the bottom of the screen, reads the chapter to
+       you and follows along — the verse being read is lit, and on most
+       devices the individual word is too. It rolls on into the next chapter,
+       so you can put the phone down.</p>
+       <p><b>The voice is your own device's, not a person.</b> Vigil holds no
+       recordings of anyone reading; it hands the words to the speech voice
+       built into your phone or computer. So it sounds like a machine reading
+       carefully, not like an audiobook. It is good for following along at
+       night; it is not a performance.</p>
+       <p>Some of those voices are far better than others, and it is worth a
+       minute to try them. <b>Read aloud &rarr; Voice</b> lists every one your
+       device has, and <b>Speed</b> slows it down — scripture wants a slower
+       voice than a web page.</p>
+       <p><b>Microsoft Edge has by far the best voices</b> — on a phone as
+       much as on a computer. Open <b>vigil.bible</b> in Edge and its
+       natural-sounding voices — Ava, Andrew, Emma and the rest — appear in
+       that Voice list and sound close to human. Chrome and Safari offer
+       plainer ones.</p>
+       <p><b>Turn on Listening layout before a long listen.</b> It is the
+       switch just below, and it strips the page back to plain paragraphs:
+       no big chapter numeral, no verse numbers, no section headings. There
+       is less to look at while you follow along — and if you would rather
+       use Edge's own <i>Read aloud</i> (its menu, or a right-click on a
+       computer), it is what stops it announcing every heading and number
+       between the verses.</p>` },
+
+  { id:"translations", q:"Reading other translations",
+    a:`<p>Tap the translation button at the top of the screen — it shows
+       three or four letters, <b>BSB</b> to begin with — to see what is
+       available.</p>
+       <p><b>Free, straight away:</b> around fifty English translations,
+       including the Berean Standard Bible that Vigil opens with, the King
+       James, the World English Bible and the American Standard. Nothing to
+       set up, and these are the ones you can save for reading offline.</p>
+       <p><b>Newer translations are copyrighted</b> — the ESV, the New Living
+       Translation, the Amplified, The Message. Their publishers let you read
+       them free for personal use, but they want to know who is asking. So
+       you register with the publisher and they give you a <b>key</b>: one
+       long line of letters and numbers, a bit like a library card number.
+       You paste it into Vigil once. It stays on this device, it is sent only
+       to the publisher it came from, and <b>Forget key</b> removes it.</p>
+       <p><b>To read the ESV:</b></p>
+       <ol>
+         <li>Go to <a href="https://api.esv.org" target="_blank" rel="noopener">api.esv.org</a>
+             and create a free account.</li>
+         <li>Ask for a key, saying it is for personal, non-commercial use.</li>
+         <li>Copy the key it shows you.</li>
+         <li>Back in Vigil: translation button &rarr; <b>English Standard
+             Version</b> &rarr; paste it in &rarr; <b>Read the ESV</b>.</li>
+       </ol>
+       <p><b>To read the NLT, the Amplified, The Message and others:</b></p>
+       <ol>
+         <li>Go to <a href="https://api.bible" target="_blank" rel="noopener">api.bible</a>
+             and create a free account.</li>
+         <li>Create an application. It will ask which Bibles you want —
+             you may choose <b>three</b> of the copyrighted ones, plus all
+             the free ones. Choose carefully; three is the whole
+             allowance.</li>
+         <li>When it is approved, copy the key from your application's
+             page. Approval can take a day or two.</li>
+         <li>Back in Vigil: translation button &rarr; <b>API.Bible</b> &rarr;
+             paste it in &rarr; <b>Use this key</b>. The three you chose
+             appear in the list.</li>
+       </ol>
+       <p>Both are free for personal reading. Neither publisher allows their
+       text to be kept on your device, so those translations are fetched as
+       you read them and need a signal.</p>` },
+
+  { id:"offline", q:"Reading with no signal, and searching",
+    a:`<p><b>Offline &rarr; Download</b>, at the bottom of this panel, saves
+       every chapter of the book you are in onto this device. Aeroplanes,
+       tunnels, the cabin with no bars. Download the books you actually
+       read; there is no need to take the whole Bible.</p>
+       <p>Only the free translations can be saved. The ESV and the
+       api.bible translations are licensed to be read live rather than
+       stored, so the button is switched off for them.</p>
+       <p><b>Search</b> — the &#8981; at the top — looks through the books you
+       have downloaded, entirely on this device; nothing you type leaves it.
+       Put a phrase <b>"in quotation marks"</b> to find those words together;
+       otherwise it finds verses containing all of them. With the ESV or an
+       api.bible translation there is nothing stored to search, so Vigil asks
+       the publisher instead, and the panel says so.</p>` },
+
+  { id:"install", q:"Keeping it on your phone",
+    a:`<p>Vigil is a web page rather than something from an app store, so you
+       add it yourself — once:</p>
+       <ul>
+         <li><b>iPhone or iPad</b>, in Safari: the share button &rarr;
+             <b>Add to Home Screen</b>.</li>
+         <li><b>Android</b>, in Chrome: the menu &rarr; <b>Install app</b> or
+             <b>Add to Home screen</b>.</li>
+       </ul>
+       <p>It then opens like any other app — full screen, no browser bars —
+       and it opens even with no signal.</p>
+       <p>Vigil updates itself the next time you open it after a new release.
+       <b>About &rarr; Update now</b>, below, fetches one immediately if you
+       do not want to wait.</p>` },
+
+  { id:"privacy", q:"Where your settings and keys are kept",
+    a:`<p>All of it — your settings, your place in the text, the books you
+       downloaded, any keys you pasted in — is stored by the browser on this
+       device. There is no account, and there is no server of ours: Vigil is
+       a single page with nowhere to send anything.</p>
+       <p>Which also means it does not follow you about. Your settings and
+       downloads do not travel between your phone and your laptop, and
+       clearing your browser's site data for vigil.bible clears them.</p>
+       <p>The one thing that leaves this device is a request for the chapter
+       you are reading, sent to whoever publishes that translation — and, for
+       the api.bible translations only, a note to them that a chapter was
+       read, which their licence requires. Nothing of the sort is sent for the
+       free translations or the ESV.</p>` }
+];
+
+let helpTopic = null;   // which topic to open on arrival, set by the "how" links
+let helpFrom  = null;   // which sheet to go back to
+
+function openHelp(topic){
+  helpFrom = sheetView || "settings";
+  helpTopic = topic || null;
+  openSheet("help");
+}
+
+/* A small "how does this work?" link, for the two places where the app
+   asks something of a reader who may not know what is being asked. */
+function helpLink(text, topic){
+  const b = el("button","linkish", text);
+  b.onclick = () => openHelp(topic);
+  return b;
+}
+
+function drawHelp(body){
+  const wrap = el("div","help");
+  let landing = null;
+  for (const t of HELP){
+    const d = document.createElement("details");
+    if (t.id === helpTopic){ d.open = true; landing = d; }
+    d.appendChild(el("summary", null, t.q));
+    const b = el("div","hb");
+    b.innerHTML = t.a;                     // authored above, never user input
+    d.appendChild(b);
+    wrap.appendChild(d);
+  }
+  body.appendChild(wrap);
+
+  const foot = el("div","note");
+  foot.textContent = "Vigil · vigil.bible" + (swVersion ? " · build " + swVersion : "");
+  body.appendChild(foot);
+
+  /* Arriving from a "how does this work?" link should land ON the answer,
+     not at the top of a list of eight questions. */
+  if (landing) requestAnimationFrame(() => landing.scrollIntoView({ block:"start" }));
+}
+
 function drawSettings(body){
   const add = (n) => body.appendChild(n);
   const group = (t) => add(el("div","group-title", t));
@@ -2435,6 +2729,13 @@ function drawSettings(body){
     return t;
   };
 
+  group("Help");
+  {
+    const open = el("button","pillbtn primary","Open");
+    open.onclick = () => openHelp(null);
+    row("How Vigil works", "What everything does, in plain words.", open);
+  }
+
   group("Light");
   row("Theme", S.theme === "auto"
         ? `Following the system — ${effectiveTheme() === "light" ? "light" : "dark"} right now.`
@@ -2474,6 +2775,15 @@ function drawSettings(body){
         S.listen = v; listenView = v;
         redrawKeepScroll();
       }));
+
+  /* Only where there is speech to have an opinion about. */
+  if (speechOK()){
+    const n = el("div","note");
+    n.appendChild(document.createTextNode(
+      "Listen speaks with a voice built into this device, not a recorded narrator. "));
+    n.appendChild(helpLink("How Listen works", "listen"));
+    add(n);
+  }
 
   if (speechOK()){
     row("Speed", "Scripture wants a slower voice than a web page.",
@@ -2875,6 +3185,16 @@ async function drawTranslations(body){
   const back = $("#sheet-back");
   back.hidden = false;
 
+  {
+    const n = el("div","note");
+    n.appendChild(document.createTextNode(
+      "The translations at the bottom are free and need nothing. Newer ones "
+      + "\u2014 the ESV, NLT, Amplified, The Message \u2014 need a free key "
+      + "from their publisher. "));
+    n.appendChild(helpLink("How to get one", "translations"));
+    body.appendChild(n);
+  }
+
   /* Once a key is saved the ESV is simply another translation, so it sits
      in a list like the rest instead of behind a form that never goes away.
      The form returns on demand, and only then. */
@@ -3026,7 +3346,7 @@ async function drawTranslations(body){
     }
     ab.appendChild(keyRow);
     ab.appendChild(Object.assign(el("div","note"), {
-      innerHTML: 'A free key from <a href="https://api.bible" target="_blank" rel="noopener">api.bible</a> carries three licensed translations of your choosing — the NIV, NASB, NLT, The Message and the Amplified are among them. The key stays on this device and is sent only to API.Bible.'
+      innerHTML: 'A free key from <a href="https://api.bible" target="_blank" rel="noopener">api.bible</a> carries three licensed translations of your choosing — the NLT, The Message and the Amplified are among them. The key stays on this device and is sent only to API.Bible.'
     }));
     body.appendChild(ab);
   }
@@ -3280,6 +3600,9 @@ $("#sheet-close").onclick = closeSheet;
 $("#scrim").onclick       = closeSheet;
 $("#sheet-back").onclick  = () => {
   if (sheetView === "passage" && pickedBook){ pickedBook = null; drawSheet(); }
+  /* Help is reached from two places, and going "back" to the panel you were
+     not on is disorienting. openHelp records which. */
+  else if (sheetView === "help") openSheet(helpFrom || "settings");
   else openSheet("settings");
 };
 /* drag the sheet down to dismiss */

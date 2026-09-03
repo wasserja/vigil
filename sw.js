@@ -30,7 +30,7 @@
 
    To skip the wait there is Settings → About → Update now, which calls
    registration.update() and reloads into the new worker. */
-const BUILD = "v25";
+const BUILD = "v26";
 
 /* CacheStorage is partitioned by ORIGIN, not by worker scope, so every
    worker on this origin sees every other worker's cache keys — and activate
