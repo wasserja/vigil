@@ -1277,10 +1277,15 @@ read, which their licence requires — nothing of the sort is sent for the
 free translations or the ESV". If a term changes, this copy changes with
 it.
 
-**Edge is named, because it is the honest answer.** On a computer Edge's
-neural voices are far better than Chrome's or Safari's and show up in
-Vigil's own Voice list; on iOS every browser is WebKit and Edge changes
-nothing, which the topic says outright. Listening layout is explained as
+**Edge is named, because it is the honest answer.** Its neural voices are
+far better than Chrome's or Safari's and show up in Vigil's own Voice
+list. **On mobile as well as on a computer** — corrected 2026-09-03 by
+Jason, against a first draft that said "on a computer" and added that on
+iOS every browser is WebKit so Edge changes nothing there. That inference
+was drawn from the read-aloud note above, and it does not follow: that
+note is about Edge's own *Read Aloud* feature, which is a different
+implementation from the `speechSynthesis` voices Vigil's Listen draws on.
+Do not reintroduce the platform caveat. Listening layout is explained as
 what to turn on before a long listen — both for Vigil's own Listen and
 for Edge's Read Aloud.
 
