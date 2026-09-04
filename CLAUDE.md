@@ -1277,17 +1277,29 @@ read, which their licence requires — nothing of the sort is sent for the
 free translations or the ESV". If a term changes, this copy changes with
 it.
 
-**Edge is named, because it is the honest answer.** Its neural voices are
-far better than Chrome's or Safari's and show up in Vigil's own Voice
-list. **On mobile as well as on a computer** — corrected 2026-09-03 by
-Jason, against a first draft that said "on a computer" and added that on
-iOS every browser is WebKit so Edge changes nothing there. That inference
-was drawn from the read-aloud note above, and it does not follow: that
-note is about Edge's own *Read Aloud* feature, which is a different
-implementation from the `speechSynthesis` voices Vigil's Listen draws on.
-Do not reintroduce the platform caveat. Listening layout is explained as
-what to turn on before a long listen — both for Vigil's own Listen and
-for Edge's Read Aloud.
+**Edge is named, because it is the honest answer — but the answer differs
+by platform, and the topic now says so.** Settled 2026-09-03 by Jason,
+after two wrong drafts of mine:
+
+- **On a computer**, Edge's neural voices appear in Vigil's own Voice list
+  and Listen speaks with them.
+- **On an iPhone or iPad, they do not.** Apple permits no browser to add
+  voices, so Listen offers Apple's own whatever browser it runs in.
+- **But Edge's own *Read aloud* does have them on iOS.** These are two
+  different mechanisms: Listen is `speechSynthesis`, Read Aloud is a
+  browser feature that extracts the page text itself. So the practical
+  advice for an iPhone is *use Edge's Read aloud instead of the Listen
+  button*, with Listening layout on — which the topic now spells out.
+
+My first draft said "on a computer" and asserted that on iOS every
+browser is WebKit so Edge changes nothing there — inferred from the
+read-aloud note above, which is about the Read Aloud feature and does not
+transfer. The second overcorrected to "on a phone as much as on a
+computer", which promised Ava in Listen on an iPhone. **Neither claim is
+true; keep the three-way distinction.** Listening layout is explained as
+what to turn on before a long listen — and on iOS it is load-bearing
+rather than a nicety, since Edge's Read Aloud is the only route to those
+voices there.
 
 **One factual fix went with it.** The API.Bible note under the key field
 claimed the free key carries "the NIV, NASB, NLT, The Message and the
