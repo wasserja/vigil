@@ -263,6 +263,10 @@ Two more things the live API taught us, neither guessable from the docs:
 7. ~~**A preview deployment.**~~ **Done 2026-09-03.** `vnext.sh`, and
    the storage/cache namespacing it required. See "The preview
    deployment".
+8. ~~**A downloads panel.**~~ **Done 2026-09-06**, v28. Reading → Offline
+   → Downloads → Manage. Built deliberately BEFORE the AMP/MSG/NLT expiry
+   work rather than after: it is the surface that expiry needs anyway, and
+   it carries none of that work's licensing risk. See "Downloads".
 
 The numbered history below is what has already been done.
 
@@ -1013,13 +1017,115 @@ chapter boundary — so it is a floor, not a fix.
   saved chapter would have to expire within 30 days and that expiry is not
   built. Keeping text past its licence because the expiry was "obviously
   fine" is exactly the failure to avoid, so the button stays off and the
-  row says why.
+  row says why. **The Downloads panel (v28) is the first half of this** —
+  where a saved book's age is already shown, and where an expiry would be
+  shown too. What is still missing is listed under "Downloads".
 - **The first chapter of a Bible costs two calls**, not one: the chapter,
   then `/v1/bibles/{id}` for the publisher's link. Metadata is cached in
   memory and in `Store` (`abm:<id>`) and never fetched again. Against 5,000
   calls a MONTH this is worth remembering — `prefetchNeighbours` still
   spends 2-3 per turn, and it is the next thing to reconsider if the
   budget bites.
+
+## Downloads (built 2026-09-06)
+
+Reading → Offline → **Downloads** → Manage. Everything saved on the
+device, in every translation, with its size and its age, and a Remove
+beside each one.
+
+Before this, a download was **invisible unless you were standing in the
+book it belonged to**. The only way to see one was to navigate back to it
+and read whether the button said Download or Remove; the only way to know
+how much of the phone was in use was to ask the operating system. A feature
+you cannot see the extent of is one you cannot decide about.
+
+### It was built before the AMP/MSG/NLT expiry, on purpose
+
+The obvious order was the other way round — expiry is the thing actually
+blocking a feature, this is only a panel. It went first because:
+
+- **Expiry needs somewhere to be seen.** "Refreshes in 12 days" and "this
+  copy has lapsed" have to live somewhere, and that somewhere is a list of
+  saved books, which did not exist.
+- **It carries none of the risk.** Public-domain text only, no licence
+  clock, no call budget. The panel could be got right without any of the
+  API.Bible questions being settled.
+- **It forced the remove path to be correct** (below), which expiry
+  inherits and would otherwise have quietly broken.
+
+### The metadata is a SECOND store, not a richer index
+
+`offline` in `Store` stays exactly what it was: an array of `"TID/BOOK"`
+strings. `offlinemeta` is new and holds `{ name, bytes, savedAt }` per key.
+
+The tempting shape was one index of objects. It was rejected because the
+`offline` index is load-bearing — `open()`, search and the download button
+all ask it — and the service worker means **an older shell can still be
+running after a release**. A build that expects strings and is handed
+objects concludes that every download has vanished. Additive beats tidy
+here.
+
+The consequence to hold on to: **the index is authoritative and everything
+the panel shows iterates IT**, joining metadata where there is any. That
+covers the totals as well as the list — summing `offlineMeta` directly
+would count an entry the index no longer owns, which the size backfill can
+briefly create by writing a size for a book removed while it was still
+reading it. Listing from the metadata side would also hide precisely the
+books saved before the panel existed, which is the very failure the panel
+was built to fix.
+
+### Three things that are recorded, and why each is where it is
+
+- **`name`** — the translation's full name, written at download time.
+  A translation's name lives only in the list fetched over the network,
+  and a downloads panel that cannot name a shelf without a signal is
+  useless in exactly the situation it exists for. Whatever it was called
+  when you saved it is what it is called on the plane. Missing on anything
+  saved before v28, which falls back to the id (`BSB`).
+- **`bytes`** — the size of the TEXT, not of the disk, and the UI says
+  "of text" for that reason. IndexedDB writes a structured clone rather
+  than this JSON string, and `navigator.storage.estimate()` counts the
+  shell cache besides, so neither would agree with this figure. A number
+  honest about what it measures beats one implying an accuracy it has not
+  got. Where a total is still missing entries it is prefixed "at least",
+  and the Reading row simply omits it rather than under-reporting.
+- **`savedAt`** — a timestamp, rendered "Saved today / 3 days ago". This
+  is where "refreshes in N days" will go. **Absent on pre-v28 books, and
+  the line is then omitted entirely** — a missing line reads as "not
+  recorded", a "Saved —" placeholder reads as a bug.
+
+Sizes for older downloads are **backfilled once**, in the background, the
+first time the panel is opened. `Store.forget()` exists only for this:
+measuring a book means reading it, `Store`'s memory cache never evicts, and
+without the forget one visit to Downloads would pin every saved book in
+memory for the session.
+
+### `removeBook` now takes what to remove
+
+It defaulted to `S.translation` / `S.book` in five separate places, which
+was right when the only caller was the Reading panel's own button. From
+Downloads you remove a book **you are not standing in**, so it takes the
+pair. The one that would have bitten hardest is `corpusCache.delete()`:
+invalidating the corpus you happen to be reading rather than the one you
+deleted from leaves search returning hits for text that is gone.
+
+Remove also **clears `chapterCache`** for that book now. It did not before,
+so every chapter the download had fetched went on being served from memory
+for the rest of the session. Harmless for public-domain text, and it dies
+on reload — but **an expired API.Bible chapter served out of
+`chapterCache` is licensed text past its licence**, so the expiry work
+needs this and now inherits it rather than having to discover it.
+
+### Still not built here
+
+- **No adding from the panel.** You still download from Reading → Offline,
+  standing in the book. Making Downloads a place to *acquire* books turns
+  it into a second book picker, which is a different thing from a list of
+  what you have.
+- **No total against the device's free space.** `navigator.storage
+  .estimate()` would give a real quota figure, but it counts the shell
+  cache and reports a padded number in some browsers, and the panel would
+  then be showing two sizes that disagree.
 
 ## Microsoft neural voices: Ava, Edge and Azure
 
@@ -1332,10 +1438,29 @@ fails the check loudly. So does promoting a build you never staged.
 
 The generator rewrites the absolute minimum, and that restraint is the
 point: **a preview you have altered is a preview you have not verified.**
-Only a `noindex` meta and the PWA's name change. `start_url` already
-differs, so the preview installs as its own app rather than fighting the
-real one for the same home-screen icon. `CNAME` is deliberately not
+Only a `noindex` meta, the PWA's name, and the home-screen icons change.
+`start_url` already differs, so the preview installs as its own app rather
+than fighting the real one for the same slot. `CNAME` is deliberately not
 mirrored — it is Pages configuration and is only valid at the site root.
+
+**The icons carry a BETA badge (added 2026-09-07).** The name change alone
+was not enough: iOS truncates the label under a home-screen icon to almost
+nothing, so an installed preview and the real app were two identical gold
+V's. `generate()` now copies four badged PNGs (`vnext-*.png` at the repo
+root) over the standard icon names in the deployment. They are composited
+by `vnext-icon.html` — the production icon as the base layer, a lighter-gold
+band with a letterspaced "BETA" on top, so the V stays pixel-identical and
+only the badge is new. The maskable one keeps the band inside the centre-80%
+safe zone. The PNGs are committed, not generated at stage time: headless-
+Chromium screenshots are not byte-stable across browser versions, and
+`promote`'s regenerate-and-compare check would eventually fail on that
+alone. To redraw the badge, re-run the render loop in `vnext-icon.html`'s
+header comment and re-commit the four files. A missing `vnext-*.png` is a
+hard error in `generate()` — an unbadged preview defeats the point.
+
+**iOS caches the home-screen icon at install time.** An already-installed
+preview will keep the old plain icon until it is deleted and re-added —
+the same trap `display_override` documents above.
 
 ### What had to change in the app, and why it was worth changing anyway
 

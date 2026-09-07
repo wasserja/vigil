@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<!--
+  vnext-icon.html — generator for the BETA-badged preview icons.
+
+  It composites a "BETA" band over the PRODUCTION icon so the letterform is
+  pixel-identical to the real app and only the badge is new. Redrawing the V
+  here would mean guessing at an unknown serif, and a slightly-wrong V makes
+  the preview read as a different app rather than a flagged build.
+
+  The four PNGs it produces —
+      vnext-icon-192.png            (base: icon-192.png)
+      vnext-icon-512.png            (base: icon-512.png)
+      vnext-icon-maskable-512.png   (base: icon-maskable-512.png, band kept
+                                     inside the maskable safe zone)
+      vnext-apple-touch-icon.png    (base: apple-touch-icon.png, 180px)
+  — are committed to the repo root and copied over the standard icon names by
+  vnext.sh's generate(). They are regenerated, not hand-maintained: see
+  scratchpad render notes, or re-run the headless-Chromium screenshot loop
+  documented in CLAUDE.md's "The preview deployment" section.
+
+  Query params:  ?base=<file>&size=<px>&mask=1
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html,body{margin:0;padding:0;background:#000;overflow:hidden}
+  #stage{position:relative;overflow:hidden}
+  #stage img{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+  /* The badge. A solid band reads at 60px where a diagonal ribbon turns to
+     mush, and a bottom band matches the app's uppercase-letterspaced heading
+     language. The gold is lighter than --gilt (#9c7f4a) on purpose, so it
+     sits on top as a label rather than looking like part of the mark. */
+  #band{
+    position:absolute;left:0;right:0;bottom:0;height:31%;
+    background:#c9a35c;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #band span{
+    font-family:"Iowan Old Style","Charter","Palatino",Palatino,Georgia,serif;
+    font-weight:700;font-size:12.5vw;line-height:1;
+    text-transform:uppercase;letter-spacing:.22em;
+    /* recentre against the trailing letter-spacing */
+    padding-left:.22em;
+    color:#0a0a0a;
+  }
+
+  /* Android clips a maskable icon to a circle; keep the band and its text
+     inside the centre 80% (radius 40% of width from centre). */
+  body[data-mask] #band{bottom:12%;height:26%}
+  body[data-mask] #band span{font-size:10.5vw}
+</style>
+</head>
+<body>
+<div id="stage"><img id="base" alt=""><div id="band"><span>Beta</span></div></div>
+<script>
+  const q = new URLSearchParams(location.search);
+  const size = +q.get("size") || 512;
+  const base = q.get("base") || "icon-512.png";
+  if (q.get("mask")) document.body.setAttribute("data-mask", "");
+  const stage = document.getElementById("stage");
+  stage.style.width = stage.style.height = size + "px";
+  document.getElementById("base").src = base;
+</script>
+</body>
+</html>

@@ -26,11 +26,29 @@ die(){ printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
 
 # Build a deployment of the app into $1. The rewrites are kept to the
 # absolute minimum on purpose: a preview you have altered is a preview you
-# have not verified. Only deployment metadata changes — never the app.
+# have not verified. Only deployment metadata changes — the name, the
+# noindex meta, and the home-screen icons — never the app itself.
 generate(){
   local dest=$1
   mkdir -p "$dest"
   for f in "${MIRROR[@]}"; do cp -p "$f" "$dest/$f"; done
+
+  # Badge the installed icons so a home-screen preview is visually distinct
+  # from the real app, not just differently named — the name alone truncates
+  # to nothing under the icon on iOS. Source PNGs live at the repo root
+  # (vnext-*.png), composited from the production icons by vnext-icon.html.
+  # A missing one is fatal: a silently-unbadged preview is the exact failure
+  # this feature exists to prevent.
+  local pair src dst
+  for pair in \
+      vnext-icon-192.png:icon-192.png \
+      vnext-icon-512.png:icon-512.png \
+      vnext-icon-maskable-512.png:icon-maskable-512.png \
+      vnext-apple-touch-icon.png:apple-touch-icon.png ; do
+    src=${pair%%:*}; dst=${pair##*:}
+    [[ -f "$src" ]] || die "Missing $src — regenerate the badged icons (see vnext-icon.html)."
+    cp -p "$src" "$dest/$dst"
+  done
 
   python3 - "$dest" <<'PY'
 import io, json, sys, re
@@ -47,9 +65,9 @@ s = io.open(p, encoding="utf-8").read()
 s = s.replace("<head>", '<head>\n<meta name="robots" content="noindex,nofollow">', 1)
 io.open(p, "w", encoding="utf-8").write(BANNER + s)
 
-# A distinguishable name, so an installed preview and the real app are not
-# two identical icons on the same home screen. start_url already differs,
-# so the two install as separate apps.
+# A distinguishable name to go with the BETA-badged icons above, so an
+# installed preview and the real app are told apart at a glance rather than
+# by reading. start_url already differs, so the two install as separate apps.
 p = dest + "/manifest.webmanifest"
 m = json.load(io.open(p, encoding="utf-8"))
 m["name"] = "Vigil Next"
