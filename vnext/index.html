@@ -878,7 +878,12 @@ const Store = (() => {
       mem.delete(key);
       if (isBook(key)) { try { await tx("readwrite", s => s.delete(key)); } catch (_) {} }
       else if (ls)     { try { ls.removeItem(PREFIX + key); } catch (_) {} }
-    }
+    },
+    /* Drop a value from the in-memory cache without touching what is stored.
+       The size backfill reads whole books only to measure them, and `mem`
+       never evicts; without this, opening Downloads once would hold every
+       saved book in memory for the rest of the session. */
+    forget(key){ mem.delete(key); }
   };
 })();
 
@@ -906,6 +911,7 @@ const BOOKS = [
 ].map(([id,name,chapters],i) => ({ id, name, chapters, ot: i < 39 }));
 
 const byId = Object.fromEntries(BOOKS.map(b => [b.id, b]));
+const canonIndex = Object.fromEntries(BOOKS.map((b, i) => [b.id, i]));
 const OT_COUNT = 39;
 
 function step(bookId, chapter, dir){
@@ -1380,6 +1386,20 @@ const S = {
 
 const chapterCache = new Map();          // "TID/BOOK/CH" -> normalised chapter
 const offlineBooks = new Set();          // "TID/BOOK" already downloaded
+
+/* What is known ABOUT each saved book, beside the fact that it is saved.
+   Deliberately a SECOND store ("offlinemeta") rather than a richer shape for
+   the "offline" index itself. The index is the load-bearing one — `open()`,
+   search and the download button all ask it — and an older build reading a
+   list of objects where it expects a list of strings would decide every
+   download had vanished. Additive is worth more here than tidy.
+
+   So: `offlineBooks` stays authoritative and this only ever decorates it.
+   Anything missing here is missing, not wrong — render around it. */
+const offlineMeta = new Map();           // "TID/BOOK" -> { name, bytes, savedAt }
+async function saveMeta(){
+  await Store.set("offlinemeta", Object.fromEntries(offlineMeta));
+}
 let translations = null;                 // lazily fetched list
 let wakeLock = null;
 
@@ -2392,6 +2412,10 @@ function drawSheet(){
   } else if (sheetView === "translations"){
     $("#sheet-title").textContent = "Translation";
     drawTranslations(body);
+  } else if (sheetView === "downloads"){
+    $("#sheet-title").textContent = "Downloads";
+    back.hidden = false;
+    drawDownloads(body);
   } else if (sheetView === "search"){
     $("#sheet-title").textContent = "Search";
     drawSearch(body);
@@ -2621,6 +2645,10 @@ const HELP = [
        <p>Only the free translations can be saved. The ESV and the
        api.bible translations are licensed to be read live rather than
        stored, so the button is switched off for them.</p>
+       <p><b>Offline &rarr; Downloads &rarr; Manage</b> lists everything you
+       have saved, in every translation, with how much of the device it is
+       using and when you saved it &mdash; and lets you remove any of it
+       from one place, without having to go and find the book first.</p>
        <p><b>Search</b> — the &#8981; at the top — looks through the books you
        have downloaded, entirely on this device; nothing you type leaves it.
        Put a phrase <b>"in quotation marks"</b> to find those words together;
@@ -2869,9 +2897,150 @@ function drawSettings(body){
   dl.append(lbl, dlBtn);
   add(dl);
 
+  /* Until this row existed a download was invisible unless you happened to
+     be standing in the book it belonged to — the only way to see or undo
+     one was to navigate back to it and read the button's label. */
+  {
+    const n = offlineBooks.size;
+    const manage = el("button","pillbtn", "Manage");
+    manage.onclick = () => openSheet("downloads");
+    /* The size is left off until every book has been measured, rather than
+       shown as a total that is quietly missing some of them. Sizes are
+       recorded at download time and backfilled the first time the panel
+       itself is opened, so this only reads bare for a reader who saved
+       books before the panel existed, and only until they look. */
+    row("Downloads",
+        n ? `${n} book${n>1?"s":""} on this device`
+            + (allMeasured() ? ` \u00b7 ${sizeLabel(knownBytes())}` : "")
+          : "Nothing saved yet.",
+        manage);
+  }
+
   if (!Store.backed){
     add(Object.assign(el("div","note"), { textContent:"Storage isn't available here, so settings and downloads last only for this session. Hosted on your own domain, they persist." }));
   }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   9b · Downloads — what is saved, and how to be rid of it
+   ══════════════════════════════════════════════════════════════ */
+
+/* Sizes are only known for books saved since this panel was built. The
+   total says "at least" whenever any of them is still unmeasured, rather
+   than quietly under-reporting a number the reader is using to decide
+   whether to delete something.
+
+   Both of these walk the INDEX and look metadata up, never the other way
+   round — the same rule the list itself follows. Summing offlineMeta
+   directly would count any entry the index no longer owns, which the
+   backfill can briefly create by writing a size for a book removed while
+   it was still running. Derive from the index and that whole class of
+   drift cannot happen. */
+const knownBytes = () =>
+  [...offlineBooks].reduce((a, k) => a + ((offlineMeta.get(k) || {}).bytes || 0), 0);
+const allMeasured = () => [...offlineBooks].every(k => (offlineMeta.get(k) || {}).bytes);
+
+function sizeLabel(bytes){
+  const mb = bytes / 1048576;
+  return (mb >= 1 ? mb.toFixed(1) + " MB" : Math.max(1, Math.round(bytes / 1024)) + " KB") + " of text";
+}
+
+function agoLabel(ms){
+  const d = Math.floor((Date.now() - ms) / 86400000);
+  return d < 1 ? "Saved today" : d === 1 ? "Saved yesterday"
+       : d < 30 ? `Saved ${d} days ago`
+       : `Saved ${new Date(ms).toLocaleDateString(undefined, { month:"long", day:"numeric", year:"numeric" })}`;
+}
+
+/* One pass, in the background, over books saved before sizes were recorded.
+   Reading a whole book only to measure it would otherwise pin every one of
+   them in Store's cache for the session, hence the forget(). */
+let backfilling = false;
+async function backfillSizes(){
+  if (backfilling || allMeasured()) return;
+  backfilling = true;
+  for (const k of [...offlineBooks]){
+    const m = offlineMeta.get(k) || {};
+    if (m.bytes) continue;
+    const [tid, book] = k.split("/");
+    const rec = await Store.get(`bk:${tid}:${book}`);
+    Store.forget(`bk:${tid}:${book}`);
+    /* Reading a book takes a moment, and Remove is one tap away. Re-check
+       the index rather than resurrecting metadata for something deleted
+       while this was in flight. */
+    if (!rec || !offlineBooks.has(k)) continue;
+    offlineMeta.set(k, Object.assign({}, m, { bytes: bookBytes(rec), name: m.name || tid }));
+    if (sheetView === "downloads") drawSheet();
+  }
+  await saveMeta();
+  backfilling = false;
+  if (sheetView === "downloads") drawSheet();
+}
+
+function drawDownloads(body){
+  const add = (n) => body.appendChild(n);
+
+  if (!offlineBooks.size){
+    const note = el("div","note");
+    note.textContent = "Nothing is saved on this device yet. Open a book in one of the free "
+      + "translations, then Reading \u2192 Offline \u2192 Download, and every chapter of it "
+      + "will be here \u2014 readable, and searchable, with no signal.";
+    add(note);
+    return;
+  }
+
+  /* The INDEX is what is iterated, never the metadata: a book saved before
+     this panel existed has no metadata at all, and listing from the meta
+     side would hide exactly the downloads a reader most wants to find. */
+  const byTid = new Map();
+  for (const k of offlineBooks){
+    const [tid, book] = k.split("/");
+    if (!byId[book]) continue;                       // a canon that moved on
+    if (!byTid.has(tid)) byTid.set(tid, []);
+    byTid.get(tid).push({ k, tid, book });
+  }
+
+  /* Whatever you are reading sits at the top; the rest by the name they
+     were saved under, falling back to the id when no name was recorded. */
+  const shelfName = tid => (offlineMeta.get(byTid.get(tid)[0].k) || {}).name || tid;
+  const order = [...byTid.keys()].sort((a, b) =>
+    a === S.translation ? -1
+    : b === S.translation ? 1
+    : shelfName(a).localeCompare(shelfName(b)));
+
+  for (const tid of order){
+    const rows = byTid.get(tid).sort((x, y) => canonIndex[x.book] - canonIndex[y.book]);
+    const first = offlineMeta.get(rows[0].k) || {};
+    add(el("div","group-title", first.name || tid));
+
+    for (const r of rows){
+      const m = offlineMeta.get(r.k) || {};
+      const bk = byId[r.book];
+      const rw = el("div","row");
+      const l = el("div","lbl", bk.name);
+      const bits = [`${bk.chapters} chapter${bk.chapters>1?"s":""}`];
+      if (m.bytes) bits.push(sizeLabel(m.bytes));
+      /* No savedAt on anything from before this build. An omitted line
+         reads as "not recorded"; a "Saved —" placeholder reads as a bug. */
+      if (m.savedAt) bits.push(agoLabel(m.savedAt));
+      l.appendChild(Object.assign(document.createElement("em"), { textContent: bits.join(" \u00b7 ") }));
+      const rm = el("button","pillbtn","Remove");
+      rm.onclick = () => removeBook(rm, r.tid, r.book);
+      rw.append(l, rm);
+      add(rw);
+    }
+  }
+
+  const foot = el("div","note");
+  const n = offlineBooks.size;
+  const measured = knownBytes();
+  foot.textContent = `${n} book${n>1?"s":""}`
+    + (measured ? `, ${allMeasured() ? "" : "at least "}${sizeLabel(measured)}` : "")
+    + `. Removing a book leaves the translation itself alone \u2014 you can read it `
+    + `again with a signal, and download it again after.`;
+  add(foot);
+
+  backfillSizes();
 }
 
 let searchQ = "";                 // survives a redraw, so the field keeps its text
@@ -3449,19 +3618,58 @@ async function downloadBook(btn){
   corpusCache.delete(tid);                  // the shelf changed; rebuild on next search
   const idx = (await Store.get("offline")) || [];
   if (!idx.includes(`${tid}/${bookId}`)) { idx.push(`${tid}/${bookId}`); await Store.set("offline", idx); }
+
+  /* The name is recorded HERE because the Downloads panel has to work with
+     no signal, and the only place a translation's full name lives is the
+     list fetched over the network. Whatever it is called at the moment it
+     is saved is what it will be called on the plane. */
+  offlineMeta.set(`${tid}/${bookId}`, {
+    name: S.translationName || transLabel(),
+    bytes: bookBytes(out),
+    savedAt: Date.now()
+  });
+  await saveMeta();
+
   toast(`${bk.name} saved for offline`);
   drawSheet();
 }
 
-async function removeBook(btn){
+/* The size of the TEXT, not of the disk. IndexedDB writes a structured
+   clone rather than this string, and `navigator.storage.estimate()` counts
+   the shell cache besides, so neither would agree with this number. The
+   panel says "of text" for that reason — a figure that is honest about
+   what it measures beats one that implies an accuracy it has not got. */
+function bookBytes(rec){
+  try { return new Blob([JSON.stringify(rec)]).size; } catch (_) { return 0; }
+}
+
+/* tid/bookId default to where the reader is standing, which is what the
+   Reading panel's button wants. The Downloads panel passes them, because
+   there you remove a book you are NOT in — and every one of these lines
+   used to read S.translation/S.book. corpusCache especially: invalidating
+   the corpus you happen to be reading rather than the one you deleted from
+   leaves stale hits for text that is gone. */
+async function removeBook(btn, tid = S.translation, bookId = S.book){
+  const key = `${tid}/${bookId}`;
   btn.disabled = true;
-  await Store.del(`bk:${S.translation}:${S.book}`);
-  offlineBooks.delete(`${S.translation}/${S.book}`);
-  corpusCache.delete(S.translation);
-  const idx = ((await Store.get("offline")) || []).filter(k => k !== `${S.translation}/${S.book}`);
+  await Store.del(`bk:${tid}:${bookId}`);
+  offlineBooks.delete(key);
+  corpusCache.delete(tid);
+
+  /* Chapters this download pulled are still in chapterCache and would go on
+     being served for the rest of the session. Harmless for public-domain
+     text; NOT harmless once a saved copy can expire, which is the whole
+     point of the panel this feeds. Clear it now so the expiry work inherits
+     a remove that actually removes. */
+  for (const k of [...chapterCache.keys()]) if (k.startsWith(key + "/")) chapterCache.delete(k);
+
+  const idx = ((await Store.get("offline")) || []).filter(k => k !== key);
   await Store.set("offline", idx);
+  offlineMeta.delete(key);
+  await saveMeta();
+
   btn.disabled = false;
-  toast(`${byId[S.book].name} removed`);
+  toast(`${byId[bookId].name} removed`);
   drawSheet();
 }
 
@@ -3612,7 +3820,7 @@ $("#sheet-back").onclick  = () => {
   /* Help is reached from two places, and going "back" to the panel you were
      not on is disorienting. openHelp records which. */
   else if (sheetView === "help") openSheet(helpFrom || "settings");
-  else openSheet("settings");
+  else openSheet("settings");   // Downloads is only ever reached from Reading
 };
 /* drag the sheet down to dismiss */
 (() => {
@@ -3651,6 +3859,8 @@ $("#sheet-back").onclick  = () => {
   const pos = await Store.get("position");
   if (pos && byId[pos.book]) { S.book = pos.book; S.chapter = pos.chapter; }
   for (const k of (await Store.get("offline")) || []) offlineBooks.add(k);
+  for (const [k, v] of Object.entries((await Store.get("offlinemeta")) || {}))
+    if (offlineBooks.has(k)) offlineMeta.set(k, v);   // never a row the index doesn't own
 
   applyLook();
   syncChrome();
