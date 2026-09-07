@@ -7,6 +7,11 @@
 #   ./vnext.sh status    what is staged, what is live, what differs
 #   ./vnext.sh serve     serve root and vnext/ locally on one origin
 #
+# `stage` and `promote` show what they are about to commit and then ask.
+# Pass -y / --yes (before or after the subcommand) to skip that question —
+# for a non-interactive shell or an automated run. It still prints the
+# diffstat first; -y only answers the prompt.
+#
 # There is ONE hand-edited copy of this app and it is ./index.html.
 # vnext/ is GENERATED — never edit it. `promote` re-generates and compares,
 # so a hand-edit there fails loudly instead of quietly becoming the drift
@@ -14,6 +19,22 @@
 #
 set -euo pipefail
 cd "$(dirname "$0")"
+
+# -y / --yes anywhere in the args auto-confirms the push prompts. Checked
+# both as a leading flag (shifted off so $1 stays the subcommand) and
+# anywhere later in the line, so `-y stage`, `stage -y` and `serve 8080 -y`
+# all work.
+ASSUME_YES=
+if [[ "${1:-}" == -y || "${1:-}" == --yes ]]; then ASSUME_YES=1; shift; fi
+case " ${*:-} " in *" -y "*|*" --yes "*) ASSUME_YES=1 ;; esac
+
+# confirm "<question>" "<abort message>" — the one gate before a push.
+confirm(){
+  local ok
+  if [[ $ASSUME_YES ]]; then say "$1 yes (--yes)"; return 0; fi
+  read -rp "$1 [y/N] " ok
+  [[ "$ok" == [yY]* ]] || die "$2"
+}
 
 DIR=vnext
 MIRROR=(index.html sw.js manifest.webmanifest
@@ -96,8 +117,7 @@ stage)
     exit 0
   fi
   git diff --cached --stat
-  read -rp $'\nPush this to vigil.bible/vnext/ ? [y/N] ' ok
-  [[ "$ok" == [yY]* ]] || die "Stopped. Nothing pushed."
+  confirm $'\nPush this to vigil.bible/vnext/ ?' "Stopped. Nothing pushed."
   git commit -qm "Stage a build to vnext/ for verification"
   git push -q
   say "Staged. Verify at https://vigil.bible/vnext/"
@@ -118,8 +138,7 @@ promote)
     exit 0
   fi
   git diff --cached --stat
-  read -rp $'\nPromote this to vigil.bible ? [y/N] ' ok
-  [[ "$ok" == [yY]* ]] || die "Stopped. Nothing promoted."
+  confirm $'\nPromote this to vigil.bible ?' "Stopped. Nothing promoted."
   git commit -qm "Promote verified vnext build to the site root"
   git push -q
   say "Live at https://vigil.bible"
@@ -154,7 +173,7 @@ serve)
   ;;
 
 *)
-  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
   ;;
 esac
