@@ -1651,8 +1651,18 @@ case that has to work.
 - Returning from the background resumes: iOS kills the utterance while
   `Speech.on` stays true, which would otherwise leave "Stop" over silence.
 - Voices load asynchronously in both Safari and Chrome, hence
-  `voiceschanged`. A local voice is preferred over a network one, and a
-  stored `voiceURI` that no longer exists falls back rather than failing.
+  `voiceschanged` — which also redraws an open Settings, because iOS Safari
+  can report its list after the sheet is drawn, and the Voice row used to
+  be missing entirely in that case.
+- **"Device default" is the default voice (v29, 2026-09-24).** With no
+  voice chosen, the utterance goes out with no `voice` set and the engine
+  uses the system's own. It replaced auto-picking the first local English
+  voice, for a reason found on Jason's iPhone: **WebKit leaves downloaded
+  Enhanced/Premium voices (Zoe) out of `getVoices()`**, yet a voiceless
+  utterance in Safari spoke with Zoe, because she was the Spoken Content
+  voice. Auto-picking overrode that with a plainer voice. Do not bring the
+  auto-pick back — it is the only route to a downloaded iOS voice. A stored
+  `voiceURI` that no longer exists falls back to the device default.
 - iOS requires the first `speak()` to happen inside a user gesture. The
   Listen button is that gesture, so nothing special is needed — but any
   future attempt to start speech automatically will be silently dropped.
