@@ -1650,6 +1650,14 @@ case that has to work.
   it — the user's own "keep the screen awake" setting is left alone.
 - Returning from the background resumes: iOS kills the utterance while
   `Speech.on` stays true, which would otherwise leave "Stop" over silence.
+- **The same happens in the foreground** when another app takes the audio
+  (reported 2026-09-24, v30): no `end`, no `error`, button stuck on Stop.
+  `speakWatch` polls every 1.5s while speaking and, after two idle checks
+  in a row, stops and remembers the verse in `Speech.resume` so the next
+  Listen in the same chapter picks up there. It does not resume by itself
+  — that would fight the app that took the audio. It stands down while
+  hidden (the visibilitychange handler owns that) and during
+  `speakAdvance` (`Speech.expect` set), which is quiet on purpose.
 - Voices load asynchronously in both Safari and Chrome, hence
   `voiceschanged` — which also redraws an open Settings, because iOS Safari
   can report its list after the sheet is drawn, and the Voice row used to
