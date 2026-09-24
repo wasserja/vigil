@@ -2113,14 +2113,10 @@ function loadVoices(){ try { voicesCache = speechSynthesis.getVoices() || []; } 
 function englishVoices(){ return voicesCache.filter(v => /^en\b|^en[-_]/i.test(v.lang)); }
 function pickVoice(){
   if (!voicesCache.length) loadVoices();
-  /* No choice means the DEVICE's default: the utterance goes out with no
-     voice set and the engine uses the system's own. On iOS that is the
-     Spoken Content voice, and it is the only way to reach one downloaded
-     there, because WebKit leaves Enhanced and Premium voices out of
-     getVoices(). Picking a voice here would override it. A stored voice
-     that has since vanished falls back to the same. */
+  const en = englishVoices();
   if (S.voice){ const hit = voicesCache.find(v => v.voiceURI === S.voice); if (hit) return hit; }
-  return null;
+  /* a local voice avoids a network round trip mid-sentence */
+  return en.find(v => v.localService) || en[0] || null;
 }
 
 function verseQueue(){
@@ -2574,14 +2570,9 @@ const HELP = [
        carefully, not like an audiobook. It is good for following along at
        night; it is not a performance.</p>
        <p>Some of those voices are far better than others, and it is worth a
-       minute to try them. <b>Read aloud &rarr; Voice</b> lists the ones your
-       browser offers, and <b>Speed</b> slows it down — scripture wants a slower
+       minute to try them. <b>Read aloud &rarr; Voice</b> lists every one your
+       device has, and <b>Speed</b> slows it down — scripture wants a slower
        voice than a web page.</p>
-       <p><b>A voice you downloaded on an iPhone may not be listed.</b>
-       Apple keeps its Enhanced and Premium voices out of the list it gives
-       web pages. Choose <b>Device default</b> instead, and Listen uses the
-       voice set in the iPhone's Settings &rarr; Accessibility &rarr;
-       Spoken Content — including one you downloaded there.</p>
        <p><b>Microsoft Edge has the best voices.</b> On a computer, open
        <b>vigil.bible</b> in Edge and its natural-sounding voices — Ava,
        Andrew, Emma and the rest — appear in that Voice list and sound
@@ -2832,21 +2823,20 @@ function drawSettings(body){
   if (speechOK()){
     row("Speed", "Scripture wants a slower voice than a web page.",
         slider(0.6, 1.3, 0.05, S.rate, v => S.rate = v));
-    /* Always drawn, even before the list arrives: "Device default" is a
-       real choice with no voices loaded, and the row would otherwise be
-       missing for as long as the engine takes to report them. */
-    const sel = document.createElement("select");
-    sel.className = "vselect";
-    sel.appendChild(Object.assign(document.createElement("option"),
-      { value: "", textContent: "Device default" }));
-    for (const v of englishVoices()){
-      const o = document.createElement("option");
-      o.value = v.voiceURI; o.textContent = v.name;
-      sel.appendChild(o);
+    const voices = englishVoices();
+    if (voices.length){
+      const sel = document.createElement("select");
+      sel.className = "vselect";
+      for (const v of voices){
+        const o = document.createElement("option");
+        o.value = v.voiceURI; o.textContent = v.name;
+        if (v.voiceURI === S.voice) o.selected = true;
+        sel.appendChild(o);
+      }
+      if (!S.voice){ const cur = pickVoice(); if (cur) sel.value = cur.voiceURI; }
+      sel.onchange = () => { S.voice = sel.value; save(); };
+      row("Voice", null, sel);
     }
-    sel.value = pickVoice() ? S.voice : "";
-    sel.onchange = () => { S.voice = sel.value; save(); };
-    row("Voice", "Device default is the voice set in your phone or computer's own settings.", sel);
   }
 
   group("About");
@@ -3712,12 +3702,7 @@ if (speechOK()){
   /* Both Safari and Chrome populate the voice list asynchronously, so
      without this the first Listen gets whatever the default happens to be
      rather than the chosen voice. */
-  /* The list can arrive after Settings is already open — iOS Safari is
-     often late — so an open Settings redraws to show it. */
-  speechSynthesis.addEventListener("voiceschanged", () => {
-    loadVoices();
-    if (sheetView === "settings") drawSheet();
-  });
+  speechSynthesis.addEventListener("voiceschanged", loadVoices);
 }
 
 function redrawKeepScroll(){
