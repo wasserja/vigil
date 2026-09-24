@@ -1658,6 +1658,21 @@ case that has to work.
   — that would fight the app that took the audio. It stands down while
   hidden (the visibilitychange handler owns that) and during
   `speakAdvance` (`Speech.expect` set), which is quiet on purpose.
+- **Where Listen starts, and moving it (v31, 2026-09-24).** `speakFrom`
+  picks, in order: a selection made in the last minute (recorded on
+  `selectionchange`, because the tap that brings the chrome back to reach
+  Listen collapses it first), an interrupted verse still on screen, then
+  the first verse below the top 16% of the viewport — the same band
+  `markSpeaking` uses, so the first highlight does not scroll the page.
+  While reading, the chapter arrows step a verse (`speakSkip`) and a
+  double-tap on a word jumps there (`speakJump`, with a mid-verse
+  character offset in `Speech.from`); the single tap's chrome toggle is
+  deferred 350ms, but only while reading. **`Speech.utt` is load-bearing:**
+  `cancel()` fires `end` on the utterance it kills, and without the token
+  every skip would advance twice. The speak after a cancel is deferred
+  50ms because WebKit can drop one issued in the same tick. AirPods and
+  lock-screen skip cannot reach any of this: `speechSynthesis` does not
+  register with Media Session.
 - Voices load asynchronously in both Safari and Chrome, hence
   `voiceschanged` — which also redraws an open Settings, because iOS Safari
   can report its list after the sheet is drawn, and the Voice row used to
