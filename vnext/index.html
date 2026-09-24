@@ -2108,7 +2108,7 @@ async function searchAB(key, bibleId, q, offset){
    what lets the current verse be highlighted and followed.            */
 
 const Speech = { on:false, queue:[], i:0, held:false, seq:0, expect:null,
-                 watch:0, idle:0, resume:null };
+                 watch:0, idle:0, resume:null, utt:0, from:0 };
 const chapterKey = () => `${S.translation}/${S.book}/${S.chapter}`;
 const speechOK = () => typeof speechSynthesis !== "undefined" && typeof SpeechSynthesisUtterance !== "undefined";
 
@@ -2212,20 +2212,29 @@ function speakNext(){
   /* Speak the rendered text when we can see it, so boundary offsets line
      up with the DOM; fall back to the queue's copy otherwise. */
   const map = verseTextMap(item.v);
-  const u = new SpeechSynthesisUtterance(map ? map.text : item.t);
+  /* A jump can land mid-verse (a double-tap on a word). Only possible when
+     the verse is on the page, since the offset is into the DOM's text. */
+  const off = map ? Math.min(Speech.from, map.text.length) : 0;
+  Speech.from = 0;
+  const u = new SpeechSynthesisUtterance(map ? map.text.slice(off) : item.t);
   u.rate = S.rate;
+  /* cancel() fires `end` on the utterance it kills, and a skip is cancel
+     then speak — so without this the dead one's onend advances a second
+     time. Every handler answers only for the current utterance. */
+  const tok = ++Speech.utt;
+  const live = () => tok === Speech.utt && Speech.on;
   const v = pickVoice(); if (v){ u.voice = v; u.lang = v.lang; }
   /* Not every engine fires these — iOS Safari historically does not, and
      network voices often skip them — so word following is a bonus on top of
      the verse highlight, never the only feedback. */
   u.onboundary = (e) => {
-    if (!Speech.on || e.name === "sentence") return;
-    markWord(map, e.charIndex || 0);
+    if (!live() || e.name === "sentence") return;
+    markWord(map, off + (e.charIndex || 0));
   };
-  u.onend = () => { clearWord(); if (Speech.on){ Speech.i++; speakNext(); } };
+  u.onend = () => { if (!live()) return; clearWord(); Speech.i++; speakNext(); };
   u.onerror = (e) => {
     /* cancel() raises these; they are not failures. */
-    if (!Speech.on || e.error === "interrupted" || e.error === "canceled") return;
+    if (!live() || e.error === "interrupted" || e.error === "canceled") return;
     speakStop(); toast("The voice stopped unexpectedly");
   };
   markSpeaking(item.v);
@@ -2279,13 +2288,87 @@ function speakWatch(){
   Speech.resume = at;
 }
 
+/* Where Listen begins, in order: a word the reader selected; the verse an
+   interruption stopped on, if it is still on screen; otherwise the first
+   verse on screen. Verse 1 only when that is what is showing. */
+function speakFrom(q){
+  const r = Speech.resume; Speech.resume = null;
+  const idx = (v) => q.findIndex(it => String(it.v) === String(v));
+  /* A selection counts only if it is recent: one made last night and long
+     scrolled away from must not decide where tonight's reading begins. */
+  const fresh = selPoint && Date.now() - selPoint.t < 60000 && document.contains(selPoint.node);
+  const pt = fresh ? pointToVerse(selPoint.node, selPoint.offset) : null;
+  selPoint = null;
+  if (pt && idx(pt.v) >= 0) return { i: idx(pt.v), off: pt.off };
+  const band = innerHeight * 0.16;
+  const onScreen = (v) => [...document.querySelectorAll(`#page .vt[data-vt="${v}"]`)]
+    .some(e => { const b = e.getBoundingClientRect(); return b.bottom > band && b.top < innerHeight; });
+  if (r && r.key === chapterKey() && r.i < q.length && onScreen(q[r.i].v)) return { i: r.i, off: 0 };
+  for (const e of document.querySelectorAll("#page .vt[data-vt]")){
+    const b = e.getBoundingClientRect();
+    if (b.bottom > band && b.top < innerHeight){ const i = idx(e.dataset.vt); if (i >= 0) return { i, off: 0 }; }
+  }
+  return { i: 0, off: 0 };
+}
+
+/* A DOM position -> the verse it is in and a character offset into that
+   verse's spoken text, snapped back to the start of the word. A tap on a
+   numeral or the drop cap lands on generated content with no text node,
+   which falls back to the start of the verse. */
+function pointToVerse(node, offset){
+  const host = node && (node.nodeType === 1 ? node : node.parentElement);
+  const vt = host && host.closest("#page .vt[data-vt]");
+  if (!vt) return null;
+  const v = vt.dataset.vt, map = verseTextMap(v);
+  if (!map) return { v, off: 0 };
+  const hit = map.nodes.find(n => n.node === node);
+  if (!hit) return { v, off: 0 };
+  let off = hit.start + Math.min(offset, node.nodeValue.length);
+  while (off > 0 && /\S/.test(map.text[off - 1])) off--;
+  return { v, off };
+}
+
+function caretAt(x, y){
+  if (document.caretPositionFromPoint){
+    const c = document.caretPositionFromPoint(x, y);
+    return c ? { node: c.offsetNode, offset: c.offset } : null;
+  }
+  if (document.caretRangeFromPoint){
+    const r = document.caretRangeFromPoint(x, y);
+    return r ? { node: r.startContainer, offset: r.startOffset } : null;
+  }
+  return null;
+}
+
+/* Move the reading to queue index i, `off` characters in. */
+function speakJump(i, off = 0){
+  if (!Speech.on || Speech.expect) return;
+  Speech.i = Math.max(0, i); Speech.from = off; Speech.idle = 0;
+  Speech.utt++;                                   // disown the utterance being cut off
+  try { speechSynthesis.cancel(); } catch (_){}
+  /* WebKit can drop a speak() issued in the same tick as a cancel(). */
+  setTimeout(() => { if (Speech.on) speakNext(); }, 50);
+}
+function speakSkip(dir){ speakJump(dir > 0 ? Speech.i + 1 : Speech.i - 1); }
+
+/* The last non-empty selection inside the page. A selection does not
+   survive the tap that brings the chrome back to reach Listen, so it is
+   recorded as it is made rather than read at click time. */
+let selPoint = null;
+document.addEventListener("selectionchange", () => {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+  const r = sel.getRangeAt(0);
+  const host = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+  if (host && host.closest("#page")) selPoint = { node: r.startContainer, offset: r.startOffset, t: Date.now() };
+});
+
 function speakStart(){
   if (!speechOK()) return toast("This browser can't read aloud");
   const q = verseQueue();
   if (!q.length) return toast("Nothing to read here yet");
-  const r = Speech.resume; Speech.resume = null;
-  const from = r && r.key === chapterKey() && r.i < q.length ? r.i : 0;
-  Speech.on = true; Speech.queue = q; Speech.i = from; Speech.seq++;
+  const at = speakFrom(q);
+  Speech.on = true; Speech.queue = q; Speech.i = at.i; Speech.from = at.off; Speech.seq++;
   Speech.idle = 0; clearInterval(Speech.watch); Speech.watch = setInterval(speakWatch, 1500);
   if (!S.awake){ Speech.held = true; requestWake(); }
   try { speechSynthesis.cancel(); } catch (_){}
@@ -2310,6 +2393,7 @@ function syncSpeakBtn(){
   if (!b) return;
   b.textContent = Speech.on ? "Stop" : "Listen";
   b.setAttribute("aria-pressed", String(Speech.on));
+  syncChrome();
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -2344,6 +2428,15 @@ function syncChrome(){
     const btn = $(id);
     btn.disabled = !n;
     btn.querySelector("span").textContent = n ? `${(byId[n.book]||{}).name} ${n.chapter}` : "";
+    btn.removeAttribute("aria-label");
+    /* While Listen is reading, the chapter arrows step a verse instead.
+       No new buttons: the bar already has two arrows, and a swipe still
+       turns the chapter. */
+    if (Speech.on){
+      btn.disabled = false;
+      btn.querySelector("span").textContent = "Verse";
+      btn.setAttribute("aria-label", dir < 0 ? "Previous verse" : "Next verse");
+    }
   }
 }
 
@@ -2595,6 +2688,14 @@ const HELP = [
        you and follows along — the verse being read is lit, and on most
        devices the individual word is too. It rolls on into the next chapter,
        so you can put the phone down.</p>
+       <p><b>It starts from what is on the screen</b>, not from verse 1 —
+       scroll to where you want to begin, then press Listen. To start at a
+       particular word, select it first (press and hold) and then press
+       Listen. While it reads, the arrows either side of <b>Stop</b> step
+       back or forward a verse, and a <b>double-tap</b> on any word moves
+       the reading there. Swiping still turns the page, and stops the
+       reading. The skip buttons on AirPods and the lock screen cannot
+       reach it — only the ones in Vigil.</p>
        <p><b>The voice is your own device's, not a person.</b> Vigil holds no
        recordings of anyone reading; it hands the words to the speech voice
        built into your phone or computer. So it sounds like a machine reading
@@ -3814,11 +3915,29 @@ if (matchMedia("(hover:hover) and (pointer:fine)").matches){
   }, { passive:true });
 }
 
+/* While Listen is reading, a double-tap on a word moves the reading
+   there. The single tap still toggles the chrome, but only after waiting
+   out a possible second tap — and only while reading, so recalling the
+   chrome is not slowed the rest of the time. touch-action:pan-y already
+   rules out double-tap zoom, so both taps arrive as clicks. */
+let tapTimer = null, lastTap = null;
 reader.addEventListener("click", (e) => {
   if (e.target.closest("a,button")) return;
   const sel = window.getSelection();
   if (sel && !sel.isCollapsed) return;
-  toggleChrome();
+  if (!Speech.on){ toggleChrome(); return; }
+  const now = Date.now();
+  if (lastTap && now - lastTap.t < 350 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40){
+    clearTimeout(tapTimer); lastTap = null;
+    const c = caretAt(e.clientX, e.clientY);
+    const pt = c && pointToVerse(c.node, c.offset);
+    const i = pt ? Speech.queue.findIndex(it => String(it.v) === String(pt.v)) : -1;
+    if (i >= 0) speakJump(i, pt.off);
+    return;
+  }
+  lastTap = { t: now, x: e.clientX, y: e.clientY };
+  clearTimeout(tapTimer);
+  tapTimer = setTimeout(() => { lastTap = null; toggleChrome(); }, 350);
 });
 
 let tx = 0, ty = 0, tt = 0, swiping = false;
@@ -3851,8 +3970,8 @@ $("#btn-trans").onclick   = () => openSheet("translations");
 $("#btn-settings").onclick= () => openSheet("settings");
 $("#btn-search").onclick  = () => openSheet("search");
 $("#btn-speak").onclick   = () => { showChrome(); speakToggle(); };
-$("#btn-prev").onclick    = () => go(-1);
-$("#btn-next").onclick    = () => go(1);
+$("#btn-prev").onclick    = () => { if (Speech.on){ showChrome(); speakSkip(-1); } else go(-1); };
+$("#btn-next").onclick    = () => { if (Speech.on){ showChrome(); speakSkip(1); } else go(1); };
 $("#sheet-close").onclick = closeSheet;
 $("#scrim").onclick       = closeSheet;
 $("#sheet-back").onclick  = () => {
