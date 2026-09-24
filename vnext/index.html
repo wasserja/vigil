@@ -2107,7 +2107,9 @@ async function searchAB(key, bibleId, q, offset){
    truncated or dropped by several engines, and per-verse granularity is
    what lets the current verse be highlighted and followed.            */
 
-const Speech = { on:false, queue:[], i:0, held:false, seq:0, expect:null };
+const Speech = { on:false, queue:[], i:0, held:false, seq:0, expect:null,
+                 watch:0, idle:0, resume:null };
+const chapterKey = () => `${S.translation}/${S.book}/${S.chapter}`;
 const speechOK = () => typeof speechSynthesis !== "undefined" && typeof SpeechSynthesisUtterance !== "undefined";
 
 let voicesCache = [];
@@ -2258,11 +2260,33 @@ async function speakAdvance(){
   speakNext();
 }
 
+/* Another app taking the audio — music, a call, AirPods handing over —
+   ends the utterance on iOS without firing end or error, so the button
+   would sit on "Stop" over silence. Once the engine has been idle for two
+   checks running (one would catch the gap between two verses), give the
+   button back and remember the verse, so Listen picks up where the
+   interruption landed rather than at verse 1. Resuming on our own would
+   fight whatever took the audio. Only while visible and not mid-advance:
+   the visibilitychange handler owns the return from the background, and
+   speakAdvance legitimately goes quiet while the next chapter loads. */
+function speakWatch(){
+  if (!Speech.on || document.visibilityState !== "visible" || Speech.expect){ Speech.idle = 0; return; }
+  const quiet = speechSynthesis.paused || (!speechSynthesis.speaking && !speechSynthesis.pending);
+  Speech.idle = quiet ? Speech.idle + 1 : 0;
+  if (Speech.idle < 2) return;
+  const at = { key: chapterKey(), i: Speech.i };
+  speakStop();
+  Speech.resume = at;
+}
+
 function speakStart(){
   if (!speechOK()) return toast("This browser can't read aloud");
   const q = verseQueue();
   if (!q.length) return toast("Nothing to read here yet");
-  Speech.on = true; Speech.queue = q; Speech.i = 0; Speech.seq++;
+  const r = Speech.resume; Speech.resume = null;
+  const from = r && r.key === chapterKey() && r.i < q.length ? r.i : 0;
+  Speech.on = true; Speech.queue = q; Speech.i = from; Speech.seq++;
+  Speech.idle = 0; clearInterval(Speech.watch); Speech.watch = setInterval(speakWatch, 1500);
   if (!S.awake){ Speech.held = true; requestWake(); }
   try { speechSynthesis.cancel(); } catch (_){}
   speakNext();
@@ -2270,7 +2294,8 @@ function speakStart(){
 }
 
 function speakStop(){
-  Speech.on = false; Speech.seq++; Speech.expect = null;
+  Speech.on = false; Speech.seq++; Speech.expect = null; Speech.resume = null;
+  clearInterval(Speech.watch); Speech.watch = 0;
   clearWord();
   try { speechSynthesis.cancel(); } catch (_){}
   for (const e of document.querySelectorAll("#page .speaking")) e.classList.remove("speaking");
